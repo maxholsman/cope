@@ -17,7 +17,7 @@ logging:
 data:
   train: fasta  # Use FASTA dataset
   valid: fasta  # Use same dataset for validation
-  fasta_path: /usr/xtmp/mth45/Documents/programmable_biology_group/gated-edit-proposal/data/cas9/cas9_dataset_fasta.fa
+  fasta_path: /usr/xtmp/mth45/Documents/programmable_biology_group/EditFlows/flow_matching/examples/editflows/data/cas9_dataset_fasta.fa
   # fasta_path: /usr/xtmp/mth45/Documents/programmable_biology_group/EditFlows/flow_matching/examples/editflows/data/example_data.fa
   cache_dir: null  # Not needed for FASTA
   num_workers: 2  # Reduced for debugging
