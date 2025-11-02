@@ -52,10 +52,13 @@ class ProbPath(ABC):
             PathSample: a conditional sample.
         """
 
-    def assert_sample_shape(self, x_0: Tensor, x_1: Tensor, t: Tensor):
-        assert (
-            t.ndim == 1
-        ), f"The time vector t must have shape [batch_size]. Got {t.shape}."
-        assert (
-            t.shape[0] == x_0.shape[0] == x_1.shape[0]
-        ), f"Time t dimension must match the batch size [{x_1.shape[0]}]. Got {t.shape}"
+    def assert_sample_shape(self, x_0, x_1, t):
+        # x_0, x_1: list[Tensor] of variable length (ragged)
+        # t: Tensor of shape (B,)
+        assert isinstance(x_0, (list, tuple)), f"x_0 must be a list or tuple of ragged Tensors. Got {type(x_0)}"
+        assert isinstance(x_1, (list, tuple)), f"x_1 must be a list or tuple of ragged Tensors. Got {type(x_1)}"
+        assert isinstance(t, Tensor), f"t must be a torch.Tensor. Got {type(t)}"
+        batch_size = len(x_0)
+        assert len(x_1) == batch_size, f"x_1 must match x_0 batch size ({batch_size}). Got {len(x_1)}"
+        assert t.ndim == 1, f"The time vector t must have shape [batch_size]. Got {t.shape}."
+        assert t.shape[0] == batch_size, f"Time t dimension must match the batch size [{batch_size}]. Got {t.shape}"

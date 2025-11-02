@@ -9,6 +9,7 @@ from .geodesic import GeodesicProbPath
 from .mixture import MixtureDiscreteProbPath
 from .path import ProbPath
 from .path_sample import DiscretePathSample, PathSample
+from .editflows_adapter import EditFlowsPathAdapter
 
 
 __all__ = [
@@ -19,4 +20,5 @@ __all__ = [
     "GeodesicProbPath",
     "PathSample",
     "DiscretePathSample",
+    "EditFlowsPathAdapter",
 ]
