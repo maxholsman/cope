@@ -70,4 +70,4 @@ output_dir/
 *logs/
 *mixture_uniform_step=320001/
 *.out
-*.err
+*.erreditflows/data/cas9_dataset_fasta.fa
