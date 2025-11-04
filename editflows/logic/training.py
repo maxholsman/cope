@@ -38,6 +38,8 @@ def step(
     optim_params: Optional[DictConfig] = None,
     time_epsilon: float = 0.0,          # unused (Option A)
     pad_id: int = 0,
+    bos_id: int = 2,
+    eos_id: int = 3
 ) -> Tensor:
     assert (training and (optim_params is not None)) or (not training)
     state.train() if training else state.eval()
@@ -52,7 +54,7 @@ def step(
         eps_id = getattr(path, "eps_id", -1)
         allowed_tokens = torch.tensor([tok for tok in source_distribution._allowed_tokens if tok != eps_id]).to(device)
         
-        x_0 = source_distribution.sample_x0_from_x1(x_1, pad_id=pad_id, allowed_tokens=allowed_tokens, scale_size=2)
+        x_0 = source_distribution.sample_x0_from_x1(x_1, pad_id=pad_id, allowed_tokens=allowed_tokens, scale_size=2, bos_id = bos_id, eos_id = eos_id)
         t = torch.rand(B, device=device)
 
         sched = path.scheduler(t)
@@ -65,11 +67,10 @@ def step(
 
     ctx = torch.amp.autocast('cuda', dtype=torch.float16) if training else torch.no_grad()
     with ctx:
-        # pdb.set_trace()
         lam_ins, logits_ins, lam_del, lam_sub, logits_sub = state.model(x_t=x_t, mask=mask,t=t)
 
         loss = loss_fn(lam_ins, logits_ins, lam_del, lam_sub, logits_sub, 
-                       z_t, z_1, x_t, mask, precomputed_weight, eps_id)
+                       z_t, z_1, x_t, mask, precomputed_weight, eps_id, bos_id, eos_id)
 
     if training:
         optimization_step(

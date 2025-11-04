@@ -52,6 +52,8 @@ def run_train(rank: int, cfg: OmegaConf) -> None:
         )
 
         pad_id = 1
+        bos_id = 0
+        eos_id = 2
     elif cfg.task == 'smiles':
         vocab_size = 587
         tokenizer = SMILES_SPE_Tokenizer('/scratch/pranamlab/tong/cope/editflows/smiles_tokenizer/new_vocab.txt',
@@ -61,8 +63,9 @@ def run_train(rank: int, cfg: OmegaConf) -> None:
         source_distribution = flow.get_source_distribution(
             source_distribution=cfg.flow.source_distribution, vocab_size=vocab_size, special_token_ids=[0,1,2,3]
         )
-
         pad_id = 0
+        bos_id = 2
+        eos_id = 3
     else:
         raise NotImplementedError
 
@@ -131,7 +134,9 @@ def run_train(rank: int, cfg: OmegaConf) -> None:
             logger=logger,
             training=True,
             time_epsilon=time_epsilon,
-            pad_id = pad_id
+            pad_id = pad_id,
+            bos_id = bos_id,
+            eos_id = eos_id,
         )
 
         train_loss_values.append(loss)

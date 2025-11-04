@@ -34,8 +34,8 @@ class EditFlowsLoss(_Loss):
         valid_mask: torch.Tensor,  # (B, L) bool, False==padding, True==valid
         precomputed_weight: torch.Tensor,  # (B,) or ()  = kappa_dot/(1-kappa)
         eps_id: int,
-        bos_id: int = 0,
-        eos_id: int = 2,
+        bos_id: int,
+        eos_id: int,
     ) -> torch.Tensor:
         """
         Implements Eq. 23 style loss for Edit Flows.

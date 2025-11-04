@@ -71,3 +71,4 @@ output_dir/
 *mixture_uniform_step=320001/
 *.out
 *.erreditflows/data/cas9_dataset_fasta.fa
+editflows/data/cas9_dataset_fasta.fa
