@@ -1,11 +1,12 @@
-# editflow_model.py
 from typing import Optional, Tuple
 import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from transformers import EsmModel
-from omegaconf.dictconfig import DictConfig
+import pytorch_lightning as pl
+
+from .utils import build_z0_z1_with_alignment, remove_eps
 import pdb
 
 # ---------- Utilities ----------
@@ -191,19 +192,18 @@ class ProteinEditFlowModel(nn.Module):
       lam_sub:  (B, L)         >= 0
       logits_sub: (B, L, V)
     """
-    def __init__(self, vocab_size, config, device):
+    def __init__(self, vocab_size, pad_id, config):
         super().__init__()
         self.d_model = getattr(config, "d_model", 768)
         self.n_layers = getattr(config, "n_layers", 12)
         self.n_heads = getattr(config, "n_heads", 12)
         self.mlp_ratio = getattr(config, "mlp_ratio", 4)
         self.max_len = getattr(config, "max_len", 2048)
-        self.pad_id = getattr(config, "pad_id", 1)
         self.dropout = getattr(config, "dropout", 0.1)
         self.attn_dropout = getattr(config, "attn_dropout", 0)
         self.proj_dropout = getattr(config, "proj_dropout", 0)
-
-        self.device = device
+        self.vocab_size = vocab_size
+        self.pad_id = pad_id
 
         # --- Embedding ---
         self.esm_emb = EsmModel.from_pretrained("facebook/esm2_t33_650M_UR50D")
@@ -306,26 +306,22 @@ class SMILESEditFlowModel(nn.Module):
       lam_sub:  (B, L)         >= 0
       logits_sub: (B, L, V)
     """
-    def __init__(self, vocab_size, config, device):
+    def __init__(self, vocab_size, pad_id, config):
         super().__init__()
         self.d_model = getattr(config, "d_model", 768)
         self.n_layers = getattr(config, "n_layers", 12)
         self.n_heads = getattr(config, "n_heads", 12)
         self.mlp_ratio = getattr(config, "mlp_ratio", 4)
         self.max_len = getattr(config, "max_len", 2048)
-        self.pad_id = getattr(config, "pad_id", 1)
         self.dropout = getattr(config, "dropout", 0.1)
         self.attn_dropout = getattr(config, "attn_dropout", 0)
         self.proj_dropout = getattr(config, "proj_dropout", 0)
-        self.vocab_size = getattr(config, "vocab_size", 0)
-
-        self.device = device
+        self.vocab_size = vocab_size
+        self.pad_id = pad_id
 
         # --- Embedding ---
         self.seq_emb = nn.Embedding(self.vocab_size, self.d_model, padding_idx=self.pad_id)
         self.time_emb = TimeEmbedding(d_model=self.d_model)
-
-        self.tok_embed_to_hidden = nn.Linear(1280, self.d_model)
 
         # --- RoPE shared by attention blocks ---
         rope = RotaryPositionalEmbedding(head_dim=self.d_model // self.n_heads, max_len=self.max_len)
@@ -403,3 +399,100 @@ class SMILESEditFlowModel(nn.Module):
             logits_sub = logits_sub.masked_fill((~mask).unsqueeze(-1), neg_val)
 
         return lam_ins, logits_ins, lam_del, lam_sub, logits_sub
+
+class EditFlow(pl.LightningModule):
+    def __init__(self, 
+                 model,
+                 loss_fn,                 
+                 path,                     
+                 source_distribution,
+                 pad_id,
+                 bos_id,
+                 eos_id,
+                 config,
+    ):
+        super().__init__()
+
+        self.cfg = config
+
+        self.source_distribution = source_distribution
+        self.path = path
+        self.model = model
+        self.loss_fn = loss_fn
+
+        self.bos_id = bos_id
+        self.eos_id = eos_id
+        self.pad_id = pad_id
+        self.eps_id = getattr(self.path, "eps_id", -1)
+
+    def configure_optimizers(self):
+        # pdb.set_trace()
+        opt = torch.optim.AdamW(
+            self.parameters(),
+            lr=float(self.cfg.optim.lr),
+            betas=(self.cfg.optim.beta1, self.cfg.optim.beta2),
+            eps=float(self.cfg.optim.eps),
+            weight_decay=self.cfg.optim.weight_decay,
+            fused=self.cfg.optim.fused,
+        )
+
+        total_epochs = self.cfg.optim.n_epochs
+        warm_epochs = max(1, int(self.cfg.optim.warmup_ratio * total_epochs))
+
+        def lr_lambda(epoch):
+            if epoch < warm_epochs:
+                alpha = (epoch + 1) / max(1, warm_epochs)
+                return 0.1 + 0.9 * alpha
+            else:
+                progress = (epoch - warm_epochs) / max(1, (total_epochs - warm_epochs))
+                cosine = 0.5 * (1 + math.cos(math.pi * progress))
+                return 0.1 + 0.9 * cosine
+
+        sch = torch.optim.lr_scheduler.LambdaLR(opt, lr_lambda=lr_lambda)
+        return {"optimizer": opt, "lr_scheduler": {"scheduler": sch, "interval": "epoch"}}
+
+    def preparation(self, x_1):
+        B = x_1.shape[0]
+
+        with torch.no_grad():
+            allowed_tokens = torch.tensor([tok for tok in self.source_distribution._allowed_tokens if tok != self.eps_id]).to(self.device)
+            
+            x_0 = self.source_distribution.sample_x0_from_x1(x_1, pad_id=self.pad_id, allowed_tokens=allowed_tokens, scale_size=2, bos_id = self.bos_id, eos_id = self.eos_id)
+            t = torch.rand(B, device=self.device)
+
+            sched = self.path.scheduler(t)
+            weight = sched.d_alpha_t / sched.sigma_t     # (B,)
+
+            z_0, z_1 = build_z0_z1_with_alignment(x_0, x_1, self.eps_id, self.pad_id, self.bos_id, self.eos_id, p_optimal=0)
+
+            z_t = self.path.sample(z_0, z_1, t=t)
+            x_t, mask = remove_eps(z_t, self.eps_id, self.pad_id)
+
+        lam_ins, logits_ins, lam_del, lam_sub, logits_sub = self.model(x_t=x_t, mask=mask,t=t)
+
+        return lam_ins, logits_ins, lam_del, lam_sub, logits_sub, z_t, z_1, x_t, mask, weight
+    
+
+    def training_step(self, batch, batch_idx):
+        x_1 = torch.tensor(batch["input_ids"]).to(self.device)
+        B = x_1.shape[0]
+        
+        lam_ins, logits_ins, lam_del, lam_sub, logits_sub, z_t, z_1, x_t, mask, weight = self.preparation(x_1)
+        
+        loss = self.loss_fn(lam_ins, logits_ins, lam_del, lam_sub, logits_sub, 
+                            z_t, z_1, x_t, mask, weight, self.eps_id, self.bos_id, self.eos_id)
+        self.log("train/loss", loss, prog_bar=True, on_step=True, on_epoch=True, batch_size=B, sync_dist=True)
+
+        return loss
+    
+    def validation_step(self, batch, batch_idx):
+        x_1 = torch.tensor(batch["input_ids"]).to(self.device)
+        B = x_1.shape[0]
+        
+        lam_ins, logits_ins, lam_del, lam_sub, logits_sub, z_t, z_1, x_t, mask, weight = self.preparation(x_1)
+        
+        loss = self.loss_fn(lam_ins, logits_ins, lam_del, lam_sub, logits_sub, 
+                            z_t, z_1, x_t, mask, weight, self.eps_id, self.bos_id, self.eos_id)
+        self.log("val/loss", loss, prog_bar=True, on_step=True, on_epoch=True, batch_size=B, sync_dist=True)
+
+        return loss

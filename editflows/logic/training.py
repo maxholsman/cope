@@ -15,7 +15,7 @@ from utils.logging import TrainLogger
 
 from .flow import SourceDistribution
 from .state import TrainState
-from .utils import build_z0_z1_with_alignment, remove_eps
+from ..model.utils import build_z0_z1_with_alignment, remove_eps
 
 from dataclasses import dataclass
 from typing import List, Tuple, Optional
@@ -35,11 +35,10 @@ def step(
     source_distribution: SourceDistribution,
     logger: TrainLogger,
     training: bool,
-    optim_params: Optional[DictConfig] = None,
-    time_epsilon: float = 0.0,          # unused (Option A)
-    pad_id: int = 0,
-    bos_id: int = 2,
-    eos_id: int = 3
+    optim_params: Optional[DictConfig],
+    pad_id: int,
+    bos_id: int,
+    eos_id: int,
 ) -> Tensor:
     assert (training and (optim_params is not None)) or (not training)
     state.train() if training else state.eval()
@@ -60,13 +59,14 @@ def step(
         sched = path.scheduler(t)
         precomputed_weight = sched.d_alpha_t / sched.sigma_t     # (B,)
 
-        z_0, z_1 = build_z0_z1_with_alignment(x_0, x_1, eps_id, pad_id, p_optimal=0.6)
+        z_0, z_1 = build_z0_z1_with_alignment(x_0, x_1, eps_id, pad_id, bos_id, eos_id, p_optimal=0.6)
 
         z_t = path.sample(z_0, z_1, t=t)
         x_t, mask = remove_eps(z_t, eps_id, pad_id)
 
     ctx = torch.amp.autocast('cuda', dtype=torch.float16) if training else torch.no_grad()
     with ctx:
+        # pdb.set_trace()
         lam_ins, logits_ins, lam_del, lam_sub, logits_sub = state.model(x_t=x_t, mask=mask,t=t)
 
         loss = loss_fn(lam_ins, logits_ins, lam_del, lam_sub, logits_sub, 
