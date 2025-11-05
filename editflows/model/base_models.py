@@ -425,8 +425,9 @@ class EditFlow(pl.LightningModule):
         self.pad_id = pad_id
         self.eps_id = getattr(self.path, "eps_id", -1)
 
+        self._total_steps = None
+
     def configure_optimizers(self):
-        # pdb.set_trace()
         opt = torch.optim.AdamW(
             self.parameters(),
             lr=float(self.cfg.optim.lr),
@@ -436,20 +437,37 @@ class EditFlow(pl.LightningModule):
             fused=self.cfg.optim.fused,
         )
 
-        total_epochs = self.cfg.optim.n_epochs
-        warm_epochs = max(1, int(self.cfg.optim.warmup_ratio * total_epochs))
+        warmup_ratio = getattr(self.cfg.optim, "warmup_ratio", 0.1)
+        min_scale = 0.1
 
-        def lr_lambda(epoch):
-            if epoch < warm_epochs:
-                alpha = (epoch + 1) / max(1, warm_epochs)
+        def lr_lambda(global_step: int):
+            # until on_train_start runs we just return 1.0
+            if self._total_steps is None or self._total_steps == 0:
+                return 1.0
+
+            total_steps = self._total_steps
+            warmup_steps = max(1, int(warmup_ratio * total_steps))
+
+            if global_step < warmup_steps:
+                # linear warmup: 0.1 -> 1.0
+                alpha = (global_step + 1) / warmup_steps
                 return 0.1 + 0.9 * alpha
             else:
-                progress = (epoch - warm_epochs) / max(1, (total_epochs - warm_epochs))
-                cosine = 0.5 * (1 + math.cos(math.pi * progress))
-                return 0.1 + 0.9 * cosine
+                # cosine from 1.0 down to min_scale
+                progress = (global_step - warmup_steps) / max(1, total_steps - warmup_steps)
+                cosine = 0.5 * (1 + math.cos(math.pi * progress))   # 1 -> 0
+                return min_scale + (1.0 - min_scale) * cosine
 
         sch = torch.optim.lr_scheduler.LambdaLR(opt, lr_lambda=lr_lambda)
-        return {"optimizer": opt, "lr_scheduler": {"scheduler": sch, "interval": "epoch"}}
+
+        return {
+            "optimizer": opt,
+            "lr_scheduler": {
+                "scheduler": sch,
+                "interval": "step",   # <- per-step
+                "frequency": 1,
+            },
+        }
 
     def preparation(self, x_1):
         B = x_1.shape[0]
@@ -457,13 +475,13 @@ class EditFlow(pl.LightningModule):
         with torch.no_grad():
             allowed_tokens = torch.tensor([tok for tok in self.source_distribution._allowed_tokens if tok != self.eps_id]).to(self.device)
             
-            x_0 = self.source_distribution.sample_x0_from_x1(x_1, pad_id=self.pad_id, allowed_tokens=allowed_tokens, scale_size=2, bos_id = self.bos_id, eos_id = self.eos_id)
+            x_0 = self.source_distribution.sample_x0_from_x1(x_1, pad_id=self.pad_id, allowed_tokens=allowed_tokens, scale_size=self.cfg.model.scale_size, bos_id = self.bos_id, eos_id = self.eos_id)
             t = torch.rand(B, device=self.device)
 
             sched = self.path.scheduler(t)
             weight = sched.d_alpha_t / sched.sigma_t     # (B,)
 
-            z_0, z_1 = build_z0_z1_with_alignment(x_0, x_1, self.eps_id, self.pad_id, self.bos_id, self.eos_id, p_optimal=0)
+            z_0, z_1 = build_z0_z1_with_alignment(x_0, x_1, self.eps_id, self.pad_id, self.bos_id, self.eos_id, p_optimal=self.cfg.model.p_optimal)
 
             z_t = self.path.sample(z_0, z_1, t=t)
             x_t, mask = remove_eps(z_t, self.eps_id, self.pad_id)
@@ -481,7 +499,7 @@ class EditFlow(pl.LightningModule):
         
         loss = self.loss_fn(lam_ins, logits_ins, lam_del, lam_sub, logits_sub, 
                             z_t, z_1, x_t, mask, weight, self.eps_id, self.bos_id, self.eos_id)
-        self.log("train/loss", loss, prog_bar=True, on_step=True, on_epoch=True, batch_size=B, sync_dist=True)
+        self.log("train_loss", loss, prog_bar=True, on_step=True, on_epoch=True, batch_size=B, sync_dist=True)
 
         return loss
     
@@ -493,6 +511,10 @@ class EditFlow(pl.LightningModule):
         
         loss = self.loss_fn(lam_ins, logits_ins, lam_del, lam_sub, logits_sub, 
                             z_t, z_1, x_t, mask, weight, self.eps_id, self.bos_id, self.eos_id)
-        self.log("val/loss", loss, prog_bar=True, on_step=True, on_epoch=True, batch_size=B, sync_dist=True)
+        self.log("val_loss", loss, prog_bar=True, on_step=True, on_epoch=True, batch_size=B, sync_dist=True)
 
         return loss
+    
+    def on_train_start(self):
+        # how many optimizer steps we will take in this fit
+        self._total_steps = self.trainer.estimated_stepping_batches

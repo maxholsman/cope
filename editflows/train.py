@@ -105,18 +105,20 @@ def main():
     
     ckpt = ModelCheckpoint(
         dirpath=os.path.join(workdir, "checkpoint"),
-        save_top_k=-1,
-        every_n_epochs=1,
-        filename="epoch{epoch:04d}",
-        save_last=True
+        monitor="val_loss",          # the metric you log
+        mode="min",                  # lower is better
+        save_top_k=3,                # keep best 3
+        save_last=True,
+        filename="epoch{epoch:04d}-val{val_loss:.2f}",
+        auto_insert_metric_name=False,  # <- this stops the extra "val_loss=..."
     )
-    lrmon = LearningRateMonitor(logging_interval="epoch")
+    lrmon = LearningRateMonitor(logging_interval="step")
 
-    # wandb_logger = WandbLogger(
-    #     project='COPE',
-    #     name=f"lr{cfg.optim.lr}",
-    #     entity='programmablebio',
-    # )
+    wandb_logger = WandbLogger(
+        project='COPE',
+        name=f"lr{cfg.optim.lr}_epoch{cfg.optim.n_epochs}_scale{cfg.model.scale_size}_optimal{cfg.model.p_optimal}",
+        entity='programmablebio',
+    )
     
     trainer = pl.Trainer(
         default_root_dir=workdir,
@@ -130,7 +132,7 @@ def main():
         enable_checkpointing=True,
         gradient_clip_val=1.0,
         deterministic=False,
-        # logger=wandb_logger,
+        logger=wandb_logger,
     )
 
     trainer.fit(editflow, train_dataloader, val_dataloader)
