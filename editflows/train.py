@@ -27,8 +27,7 @@ def main():
         config_dict = yaml.safe_load(f)
     cfg = edict(config_dict)
 
-    now = datetime.datetime.now()
-    run_name = now.strftime("%Y.%m.%d/%H%M%S")
+    run_name = f"lr{cfg.optim.lr}_epoch{cfg.optim.n_epochs}_scale{cfg.model.scale_size}_optimal{cfg.model.p_optimal}"
     workdir = os.path.join(cfg.work_dir, run_name)
     os.makedirs(workdir, exist_ok=True)
     
@@ -116,7 +115,7 @@ def main():
 
     wandb_logger = WandbLogger(
         project='COPE',
-        name=f"lr{cfg.optim.lr}_epoch{cfg.optim.n_epochs}_scale{cfg.model.scale_size}_optimal{cfg.model.p_optimal}",
+        name=run_name,
         entity='programmablebio',
     )
     

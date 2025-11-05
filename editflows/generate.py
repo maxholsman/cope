@@ -14,6 +14,8 @@ from transformers import EsmTokenizer
 from smiles_tokenizer.my_tokenizers import SMILES_SPE_Tokenizer
 from smiles_tokenizer.selfies_tokenizers import SelfiesTokenizer
 
+from is_peptidomimetic import is_peptidomimetic_not_natural
+
 import pdb
 
 def build_model_and_stuff(cfg, device):
@@ -77,7 +79,6 @@ def build_model_and_stuff(cfg, device):
         path=path,
     )
 
-    # wrap in LightningModule just like train.py
     editflow = EditFlow(
         model,
         loss_fn,
@@ -157,6 +158,9 @@ def main():
     parser.add_argument("--input", type=str, required=True, help="input x_0 as raw string (smiles/protein/selfies)")
     parser.add_argument("--num-steps", type=int, default=32)
     parser.add_argument("--max-len-cap", type=int, default=None)
+    parser.add_argument("--op_temperature", type=float, default=1)
+    parser.add_argument("--token_temperature", type=float, default=1)
+
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -188,10 +192,19 @@ def main():
         allowed_tokens=allowed_tokens,
         num_steps=args.num_steps,
         max_len_cap=args.max_len_cap,
+        op_temperature=args.op_temperature,      # soften op choice
+        token_temperature=args.token_temperature,   # soften token choice
     )
 
     out_str = detokenize_output(x_gen, cfg, tokenizer, bos_id, eos_id, pad_id)
-    print(out_str)
+    print('----------------------------')
+    print(f"Input Sequence: {args.input}\n")
+    print(f"Designed Sequence: {out_str}\n")
+
+    if cfg.task == 'selfies':
+        flag, audit = is_peptidomimetic_not_natural(out_str)
+        print(f"Is Peptidomimetic: {flag}\n{audit['mimetic_indicators']}\nalpha_only={audit['alpha_only_backbone']}\n")
+
 
 
 if __name__ == "__main__":

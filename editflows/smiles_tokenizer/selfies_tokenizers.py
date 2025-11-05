@@ -53,7 +53,7 @@ class SelfiesTokenizer:
         self.inv_vocab = {i: tok for tok, i in self.vocab.items()}
         self.vocab_size = len(self.vocab)
 
-    def encode(self, text: str, already_selfies: bool = False, add_bos_eos: bool = False) -> Dict[str, List[int]]:
+    def encode(self, text: str, already_selfies: bool = True, add_bos_eos: bool = True) -> Dict[str, List[int]]:
         if not already_selfies:
             # optionally validate SMILES with RDKit to avoid weird cases
             if text and Chem.MolFromSmiles(text) is None:
@@ -74,10 +74,6 @@ class SelfiesTokenizer:
         
         attention_mask = [1] * len(ids)
         return {"input_ids": ids, "attention_mask": attention_mask}
-
-    def decode(self, ids: List[int]) -> str:
-        toks = [self.inv_vocab[i] for i in ids if i in self.inv_vocab and self.inv_vocab[i] not in (PAD_TOKEN, BOS_TOKEN, EOS_TOKEN)]
-        return "".join(toks)  # SELFIES string
 
     def save(self, folder, constraints = None, version = None):
         os.makedirs(folder, exist_ok=True)
@@ -129,7 +125,7 @@ class SelfiesTokenizer:
         ids: list[int],
         return_smiles: bool = True,
         stop_at_eos: bool = False,
-        sanitize_smiles: bool = True,
+        sanitize_smiles: bool = False,
     ) -> str:
         """
         Decode a sequence of token ids.

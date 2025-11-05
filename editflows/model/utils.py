@@ -171,3 +171,186 @@ def remove_eps(
     if return_mask:
         return x_t, mask
     return x_t
+
+@torch.no_grad()
+def generate_from_x0(
+    model,
+    x0: torch.Tensor,          # (B, L) long, has BOS/EOS, padded with pad_id
+    *,
+    pad_id: int,
+    bos_id: int,
+    eos_id: int,
+    allowed_tokens: torch.Tensor = None,  # 1D tensor of vocab ids we can generate
+    num_steps: int = 32,
+    max_len_cap: int = None,
+    op_temperature: float = 1.0,          # temperature for choosing insert vs delete vs sub
+    token_temperature: float = 1.0,       # temperature for choosing the token to insert/sub
+    device: torch.device = None,
+):
+    """
+    Discrete edit sampler for Edit Flows with temperature on:
+      - operation choice (insert/delete/sub)
+      - token choice (for insert/sub)
+
+    At each step we apply at most ONE edit per sequence.
+    """
+    if device is None:
+        device = x0.device
+    x = x0.clone().to(device)
+    B = x.size(0)
+
+    def sample_token_from_logits(logits_row: torch.Tensor) -> int:
+        """
+        logits_row: (V,)
+        Apply temperature + allowed_tokens filtering, then sample.
+        """
+        logit = logits_row
+        if allowed_tokens is not None:
+            mask = torch.zeros_like(logit, dtype=torch.bool)
+            mask[allowed_tokens] = True
+            logit = logit.masked_fill(~mask, -1e4)
+
+        if token_temperature is not None and token_temperature > 0.0:
+            logit = logit / token_temperature
+
+        probs = F.softmax(logit, dim=-1)
+        # multinomial expects probs >= 0 and sum=1
+        idx = torch.multinomial(probs, num_samples=1)
+        return int(idx.item())
+
+    for step in range(num_steps):
+        # t in [0,1]
+        t = torch.full((B,), float(step) / float(max(1, num_steps - 1)), device=device)
+
+        # build mask: True = valid, False = pad
+        mask = (x != pad_id)
+
+        # forward through model
+        lam_ins, logits_ins, lam_del, lam_sub, logits_sub = model(x_t=x, mask=mask, t=t)
+
+        # collect new sequences
+        new_seqs = []
+        max_len_this_round = 0
+
+        for b in range(B):
+            seq = x[b]
+            valid = (seq != pad_id)
+            tokens = seq[valid].tolist()  # python list
+
+            if len(tokens) == 0:
+                new_seq = torch.tensor([], device=device, dtype=torch.long)
+                new_seqs.append(new_seq)
+                continue
+
+            # find EOS pos
+            try:
+                eos_pos = tokens.index(eos_id)
+            except ValueError:
+                eos_pos = len(tokens) - 1
+
+            length_b = valid.sum().item()
+            lam_ins_b = lam_ins[b]
+            lam_del_b = lam_del[b]
+            lam_sub_b = lam_sub[b]
+            logits_ins_b = logits_ins[b]
+            logits_sub_b = logits_sub[b]
+
+            # --- collect best candidate per op ---
+
+            # insertion: pick position with highest lambda, but skip after EOS
+            best_ins_pos = None
+            best_ins_val = 0.0
+            for i in range(length_b):
+                if tokens[i] == eos_id:
+                    continue
+                val = lam_ins_b[i].item()
+                if val > best_ins_val:
+                    best_ins_val = val
+                    best_ins_pos = i
+
+            # deletion: pick position with highest lambda, skip BOS/EOS
+            best_del_pos = None
+            best_del_val = 0.0
+            for i in range(length_b):
+                if tokens[i] == bos_id or tokens[i] == eos_id:
+                    continue
+                val = lam_del_b[i].item()
+                if val > best_del_val:
+                    best_del_val = val
+                    best_del_pos = i
+
+            # substitution: pick position with highest lambda, skip BOS/EOS
+            best_sub_pos = None
+            best_sub_val = 0.0
+            for i in range(length_b):
+                if tokens[i] == bos_id or tokens[i] == eos_id:
+                    continue
+                val = lam_sub_b[i].item()
+                if val > best_sub_val:
+                    best_sub_val = val
+                    best_sub_pos = i
+
+            # --- choose which operation to apply ---
+            # we form a 3-vector of op "scores" = the lambdas
+            op_scores = torch.tensor(
+                [best_ins_val, best_del_val, best_sub_val],
+                device=device,
+                dtype=torch.float32,
+            )
+
+            # if all zero-ish, just keep sequence
+            if torch.all(op_scores <= 1e-6):
+                new_seq = torch.tensor(tokens, device=device, dtype=torch.long)
+                new_seqs.append(new_seq)
+                max_len_this_round = max(max_len_this_round, new_seq.size(0))
+                continue
+
+            # temperature over ops
+            if op_temperature is not None and op_temperature > 0.0:
+                op_logits = op_scores / op_temperature
+                op_probs = F.softmax(op_logits, dim=0)
+                op_idx = int(torch.multinomial(op_probs, 1).item())
+            else:
+                op_idx = int(torch.argmax(op_scores).item())
+
+            # 0 -> insert, 1 -> delete, 2 -> sub
+            if op_idx == 0:
+                # insertion
+                pos = best_ins_pos
+                if pos is not None:
+                    ins_tok = sample_token_from_logits(logits_ins_b[pos])
+                    tokens = tokens[:pos + 1] + [ins_tok] + tokens[pos + 1:]
+
+            elif op_idx == 1:
+                # deletion
+                pos = best_del_pos
+                if pos is not None:
+                    tokens = tokens[:pos] + tokens[pos + 1:]
+
+            else:
+                # substitution
+                pos = best_sub_pos
+                if pos is not None:
+                    sub_tok = sample_token_from_logits(logits_sub_b[pos])
+                    tokens = tokens[:pos] + [sub_tok] + tokens[pos + 1:]
+
+            # make sure we still end with EOS
+            if len(tokens) == 0 or tokens[-1] != eos_id:
+                tokens.append(eos_id)
+
+            # enforce max_len_cap
+            if max_len_cap is not None and len(tokens) > max_len_cap:
+                tokens = tokens[:max_len_cap]
+                if tokens[-1] != eos_id:
+                    tokens[-1] = eos_id
+
+            new_seq = torch.tensor(tokens, device=device, dtype=torch.long)
+            new_seqs.append(new_seq)
+            max_len_this_round = max(max_len_this_round, new_seq.size(0))
+
+        # pad batch back to tensor
+        x = x.new_full((B, max_len_this_round), pad_id)
+        for b, seq_b in enumerate(new_seqs):
+            x[b, :seq_b.size(0)] = seq_b
+
+    return x
