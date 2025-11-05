@@ -1,0 +1,122 @@
+_wandb:
+    value:
+        cli_version: 0.22.3
+        e:
+            gmexwpwxipn5zp7a8oy45jlvtq21dc86:
+                codePath: editflows/train.py
+                codePathLocal: editflows/train.py
+                cpu_count: 24
+                cpu_count_logical: 48
+                cudaVersion: "12.8"
+                disk:
+                    /:
+                        total: "3778784665600"
+                        used: "447786790912"
+                email: maxholsman@gmail.com
+                executable: /usr/project/xtmp/mth45/miniforge3/envs/EditFlows/bin/python
+                git:
+                    commit: 6c8877e2b18fc4a14c514050fdaefb04c8e6d232
+                    remote: https://github.com/maxholsman/cope.git
+                gpu: NVIDIA RTX A6000
+                gpu_count: 1
+                gpu_nvidia:
+                    - architecture: Ampere
+                      cudaCores: 10752
+                      memoryTotal: "51527024640"
+                      name: NVIDIA RTX A6000
+                      uuid: GPU-f44d84e3-799a-7db4-6931-33ab1fe6173c
+                host: compsci-cluster-fitz-06
+                memory:
+                    total: "810769674240"
+                os: Linux-5.15.0-160-generic-x86_64-with-glibc2.35
+                program: /usr/project/xtmp/mth45/Documents/programmable_biology_group/EditFlows/flow_matching/editflows/train.py
+                python: CPython 3.10.19
+                root: .
+                slurm:
+                    cluster_name: compsci_cluster
+                    conf: /var/lib/slurm/slurmd/conf-cache/slurm.conf
+                    cpus_on_node: "2"
+                    gpus_on_node: "1"
+                    gtids: "0"
+                    job_account: nlplab
+                    job_cpus_per_node: "1"
+                    job_end_time: "1762657024"
+                    job_gid: "1000000"
+                    job_group: oitusers
+                    job_id: "10117516"
+                    job_name: bash
+                    job_nodelist: compsci-cluster-fitz-06
+                    job_num_nodes: "1"
+                    job_partition: compsci-gpu
+                    job_qos: normal
+                    job_start_time: "1762311424"
+                    job_uid: "1395656"
+                    job_user: mth45
+                    jobid: "10117516"
+                    launch_node_ipaddr: 152.3.143.21
+                    localid: "0"
+                    nnodes: "1"
+                    nodeid: "0"
+                    nodelist: compsci-cluster-fitz-06
+                    nprocs: "1"
+                    ntasks: "1"
+                    oom_kill_step: "0"
+                    prio_process: "19"
+                    procid: "0"
+                    pty_port: "38611"
+                    pty_win_col: "77"
+                    pty_win_row: "6"
+                    srun_comm_host: 152.3.143.21
+                    srun_comm_port: "45985"
+                    step_gpus: "2"
+                    step_id: "0"
+                    step_launcher_port: "45985"
+                    step_nodelist: compsci-cluster-fitz-06
+                    step_num_nodes: "1"
+                    step_num_tasks: "1"
+                    step_tasks_per_node: "1"
+                    stepid: "0"
+                    submit_dir: /usr/project/xtmp/mth45/Documents
+                    submit_host: compsci-login-03
+                    task_pid: "622678"
+                    tasks_per_node: "1"
+                    topology_addr: compsci-cluster-fitz-06
+                    topology_addr_pattern: node
+                    umask: "0022"
+                startedAt: "2025-11-05T02:59:13.759611Z"
+                writerId: gmexwpwxipn5zp7a8oy45jlvtq21dc86
+        m:
+            - "1": trainer/global_step
+              "6":
+                - 3
+              "7": []
+            - "2": '*'
+              "5": 1
+              "6":
+                - 1
+              "7": []
+        python_version: 3.10.19
+        t:
+            "1":
+                - 1
+                - 9
+                - 11
+                - 49
+                - 51
+                - 103
+            "2":
+                - 1
+                - 9
+                - 11
+                - 49
+                - 51
+                - 103
+            "3":
+                - 7
+                - 13
+                - 66
+            "4": 3.10.19
+            "5": 0.22.3
+            "6": 4.57.1
+            "12": 0.22.3
+            "13": linux-x86_64

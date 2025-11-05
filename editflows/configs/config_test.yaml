@@ -1,7 +1,7 @@
 defaults:
   - _self_
 
-task: selfies
+task: protein
 
 compute:
   ngpus: 1  # Single GPU for debugging
@@ -11,15 +11,17 @@ logging:
   log_freq: 10  # More frequent logging for debugging
   log_lr_every: ${logging.log_freq}
   log_file_name: stdout.log
-  enable_wandb: False  # Disable wandb for test run
+  enable_wandb: True  # Disable wandb for test run
   entity: maximilianholsman
   project: Gated proposal model
   group: null
 
 data:
-  train: fasta  # Use FASTA dataset
-  valid: fasta  # Use same dataset for validation
-  fasta_path: /scratch/pranamlab/tong/cope/editflows/data/cas9_dataset_fasta.fa
+  train_path: /usr/xtmp/mth45/Documents/programmable_biology_group/gated-edit-proposal/data/cas9/cas9_dataset_esm2_tokenized_under_750/train
+  val_path: /usr/xtmp/mth45/Documents/programmable_biology_group/gated-edit-proposal/data/cas9/cas9_dataset_esm2_tokenized_under_750/validation
+  # train: fasta  # Use FASTA dataset
+  # valid: fasta  # Use same dataset for validation
+  # fasta_path: /usr/xtmp/mth45/Documents/programmable_biology_group/gated-edit-proposal/data/cas9/cas9_dataset_esm2_tokenized
   # fasta_path: /usr/xtmp/mth45/Documents/programmable_biology_group/EditFlows/flow_matching/examples/editflows/data/example_data.fa
   cache_dir: null  # Not needed for FASTA
   num_workers: 2  # Reduced for debugging
@@ -30,6 +32,7 @@ training:
   eval_freq: 1000  # Frequent evaluation
   perplexity_freq: 100  # Less frequent generation
   seed: 42
+  grad_accumulation_steps: 64  # Number of batches to accumulate before updating weights
 
 eval:
   batch_size: 4
@@ -72,4 +75,4 @@ model:
   p_optimal: 0
   scale_size: 1.5
 
-work_dir: /scratch/pranamlab/tong/cope/editflows/outputs
+work_dir: /usr/xtmp/mth45/Documents/programmable_biology_group/EditFlows/flow_matching/editflows/outputs

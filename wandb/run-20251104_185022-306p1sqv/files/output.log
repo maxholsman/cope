@@ -1,0 +1,162 @@
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [0]
+/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/pytorch_lightning/utilities/model_summary/model_summary.py:231: Precision bf16-mixed is not supported by the model summary.  Estimated model size in MB will not be accurate. Using 32 bits instead.
+
+  | Name    | Type                 | Params | Mode
+---------------------------------------------------------
+0 | model   | ProteinEditFlowModel | 742 M  | train
+1 | loss_fn | EditFlowsLoss        | 0      | train
+---------------------------------------------------------
+91.7 M    Trainable params
+651 M     Non-trainable params
+742 M     Total params
+2,970.815 Total estimated model params size (MB)
+170       Modules in train mode
+574       Modules in eval mode
+Epoch 0:   5%| | 1124/22285 [38:16<1                                                                                                                        
+/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/torch/utils/data/dataloader.py:627: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  warnings.warn(
+/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/pytorch_lightning/loops/fit_loop.py:527: Found 574 module(s) in eval mode at the start of training. This may lead to unexpected behavior during training. If this is intentional, you can ignore this warning.
+Traceback (most recent call last):
+  File "/usr/project/xtmp/mth45/Documents/programmable_biology_group/EditFlows/flow_matching/editflows/train.py", line 146, in <module>
+    main()
+  File "/usr/project/xtmp/mth45/Documents/programmable_biology_group/EditFlows/flow_matching/editflows/train.py", line 142, in main
+    trainer.fit(editflow, train_dataloader, val_dataloader)
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/pytorch_lightning/trainer/trainer.py", line 560, in fit
+    call._call_and_handle_interrupt(
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/pytorch_lightning/trainer/call.py", line 49, in _call_and_handle_interrupt
+    return trainer_fn(*args, **kwargs)
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/pytorch_lightning/trainer/trainer.py", line 598, in _fit_impl
+    self._run(model, ckpt_path=ckpt_path)
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/pytorch_lightning/trainer/trainer.py", line 1011, in _run
+    results = self._run_stage()
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/pytorch_lightning/trainer/trainer.py", line 1055, in _run_stage
+    self.fit_loop.run()
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/pytorch_lightning/loops/fit_loop.py", line 216, in run
+    self.advance()
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/pytorch_lightning/loops/fit_loop.py", line 458, in advance
+    self.epoch_loop.run(self._data_fetcher)
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/pytorch_lightning/loops/training_epoch_loop.py", line 152, in run
+    self.advance(data_fetcher)
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/pytorch_lightning/loops/training_epoch_loop.py", line 348, in advance
+    batch_output = self.automatic_optimization.run(trainer.optimizers[0], batch_idx, kwargs)
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/pytorch_lightning/loops/optimization/automatic.py", line 192, in run
+    self._optimizer_step(batch_idx, closure)
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/pytorch_lightning/loops/optimization/automatic.py", line 270, in _optimizer_step
+    call._call_lightning_module_hook(
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/pytorch_lightning/trainer/call.py", line 177, in _call_lightning_module_hook
+    output = fn(*args, **kwargs)
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/pytorch_lightning/core/module.py", line 1366, in optimizer_step
+    optimizer.step(closure=optimizer_closure)
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/pytorch_lightning/core/optimizer.py", line 154, in step
+    step_output = self._strategy.optimizer_step(self._optimizer, closure, **kwargs)
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/pytorch_lightning/strategies/strategy.py", line 239, in optimizer_step
+    return self.precision_plugin.optimizer_step(optimizer, model=model, closure=closure, **kwargs)
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/pytorch_lightning/plugins/precision/amp.py", line 76, in optimizer_step
+    return super().optimizer_step(optimizer, model=model, closure=closure, **kwargs)
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/pytorch_lightning/plugins/precision/precision.py", line 123, in optimizer_step
+    return optimizer.step(closure=closure, **kwargs)
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/torch/optim/lr_scheduler.py", line 133, in wrapper
+    return func.__get__(opt, opt.__class__)(*args, **kwargs)
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/torch/optim/optimizer.py", line 517, in wrapper
+    out = func(*args, **kwargs)
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/torch/optim/optimizer.py", line 82, in _use_grad
+    ret = func(*args, **kwargs)
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/torch/optim/adam.py", line 226, in step
+    loss = closure()
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/pytorch_lightning/plugins/precision/precision.py", line 109, in _wrap_closure
+    closure_result = closure()
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/pytorch_lightning/loops/optimization/automatic.py", line 146, in __call__
+    self._result = self.closure(*args, **kwargs)
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/torch/utils/_contextlib.py", line 120, in decorate_context
+    return func(*args, **kwargs)
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/pytorch_lightning/loops/optimization/automatic.py", line 140, in closure
+    self._backward_fn(step_output.closure_loss)
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/pytorch_lightning/loops/optimization/automatic.py", line 241, in backward_fn
+    call._call_strategy_hook(self.trainer, "backward", loss, optimizer)
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/pytorch_lightning/trainer/call.py", line 329, in _call_strategy_hook
+    output = fn(*args, **kwargs)
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/pytorch_lightning/strategies/strategy.py", line 213, in backward
+    self.precision_plugin.backward(closure_loss, self.lightning_module, optimizer, *args, **kwargs)
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/pytorch_lightning/plugins/precision/precision.py", line 73, in backward
+    model.backward(tensor, *args, **kwargs)
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/pytorch_lightning/core/module.py", line 1135, in backward
+    loss.backward(*args, **kwargs)
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/torch/_tensor.py", line 625, in backward
+    torch.autograd.backward(
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/torch/autograd/__init__.py", line 354, in backward
+    _engine_run_backward(
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/torch/autograd/graph.py", line 841, in _engine_run_backward
+    return Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 1.83 GiB. GPU 0 has a total capacity of 47.41 GiB of which 1.67 GiB is free. Including non-PyTorch memory, this process has 45.73 GiB memory in use. Of the allocated memory 43.20 GiB is allocated by PyTorch, and 2.21 GiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)
+Traceback (most recent call last):
+  File "/usr/project/xtmp/mth45/Documents/programmable_biology_group/EditFlows/flow_matching/editflows/train.py", line 146, in <module>
+    main()
+  File "/usr/project/xtmp/mth45/Documents/programmable_biology_group/EditFlows/flow_matching/editflows/train.py", line 142, in main
+    trainer.fit(editflow, train_dataloader, val_dataloader)
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/pytorch_lightning/trainer/trainer.py", line 560, in fit
+    call._call_and_handle_interrupt(
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/pytorch_lightning/trainer/call.py", line 49, in _call_and_handle_interrupt
+    return trainer_fn(*args, **kwargs)
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/pytorch_lightning/trainer/trainer.py", line 598, in _fit_impl
+    self._run(model, ckpt_path=ckpt_path)
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/pytorch_lightning/trainer/trainer.py", line 1011, in _run
+    results = self._run_stage()
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/pytorch_lightning/trainer/trainer.py", line 1055, in _run_stage
+    self.fit_loop.run()
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/pytorch_lightning/loops/fit_loop.py", line 216, in run
+    self.advance()
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/pytorch_lightning/loops/fit_loop.py", line 458, in advance
+    self.epoch_loop.run(self._data_fetcher)
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/pytorch_lightning/loops/training_epoch_loop.py", line 152, in run
+    self.advance(data_fetcher)
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/pytorch_lightning/loops/training_epoch_loop.py", line 348, in advance
+    batch_output = self.automatic_optimization.run(trainer.optimizers[0], batch_idx, kwargs)
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/pytorch_lightning/loops/optimization/automatic.py", line 192, in run
+    self._optimizer_step(batch_idx, closure)
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/pytorch_lightning/loops/optimization/automatic.py", line 270, in _optimizer_step
+    call._call_lightning_module_hook(
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/pytorch_lightning/trainer/call.py", line 177, in _call_lightning_module_hook
+    output = fn(*args, **kwargs)
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/pytorch_lightning/core/module.py", line 1366, in optimizer_step
+    optimizer.step(closure=optimizer_closure)
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/pytorch_lightning/core/optimizer.py", line 154, in step
+    step_output = self._strategy.optimizer_step(self._optimizer, closure, **kwargs)
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/pytorch_lightning/strategies/strategy.py", line 239, in optimizer_step
+    return self.precision_plugin.optimizer_step(optimizer, model=model, closure=closure, **kwargs)
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/pytorch_lightning/plugins/precision/amp.py", line 76, in optimizer_step
+    return super().optimizer_step(optimizer, model=model, closure=closure, **kwargs)
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/pytorch_lightning/plugins/precision/precision.py", line 123, in optimizer_step
+    return optimizer.step(closure=closure, **kwargs)
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/torch/optim/lr_scheduler.py", line 133, in wrapper
+    return func.__get__(opt, opt.__class__)(*args, **kwargs)
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/torch/optim/optimizer.py", line 517, in wrapper
+    out = func(*args, **kwargs)
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/torch/optim/optimizer.py", line 82, in _use_grad
+    ret = func(*args, **kwargs)
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/torch/optim/adam.py", line 226, in step
+    loss = closure()
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/pytorch_lightning/plugins/precision/precision.py", line 109, in _wrap_closure
+    closure_result = closure()
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/pytorch_lightning/loops/optimization/automatic.py", line 146, in __call__
+    self._result = self.closure(*args, **kwargs)
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/torch/utils/_contextlib.py", line 120, in decorate_context
+    return func(*args, **kwargs)
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/pytorch_lightning/loops/optimization/automatic.py", line 140, in closure
+    self._backward_fn(step_output.closure_loss)
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/pytorch_lightning/loops/optimization/automatic.py", line 241, in backward_fn
+    call._call_strategy_hook(self.trainer, "backward", loss, optimizer)
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/pytorch_lightning/trainer/call.py", line 329, in _call_strategy_hook
+    output = fn(*args, **kwargs)
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/pytorch_lightning/strategies/strategy.py", line 213, in backward
+    self.precision_plugin.backward(closure_loss, self.lightning_module, optimizer, *args, **kwargs)
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/pytorch_lightning/plugins/precision/precision.py", line 73, in backward
+    model.backward(tensor, *args, **kwargs)
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/pytorch_lightning/core/module.py", line 1135, in backward
+    loss.backward(*args, **kwargs)
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/torch/_tensor.py", line 625, in backward
+    torch.autograd.backward(
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/torch/autograd/__init__.py", line 354, in backward
+    _engine_run_backward(
+  File "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/torch/autograd/graph.py", line 841, in _engine_run_backward
+    return Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 1.83 GiB. GPU 0 has a total capacity of 47.41 GiB of which 1.67 GiB is free. Including non-PyTorch memory, this process has 45.73 GiB memory in use. Of the allocated memory 43.20 GiB is allocated by PyTorch, and 2.21 GiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)

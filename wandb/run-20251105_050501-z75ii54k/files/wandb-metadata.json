@@ -1,0 +1,92 @@
+{
+  "os":  "Linux-5.19.0-32-generic-x86_64-with-glibc2.35",
+  "python":  "CPython 3.10.19",
+  "startedAt":  "2025-11-05T10:05:01.427859Z",
+  "program":  "/usr/project/xtmp/mth45/Documents/programmable_biology_group/EditFlows/flow_matching/editflows/train.py",
+  "codePath":  "editflows/train.py",
+  "codePathLocal":  "editflows/train.py",
+  "git":  {
+    "remote":  "https://github.com/maxholsman/cope.git",
+    "commit":  "6c8877e2b18fc4a14c514050fdaefb04c8e6d232"
+  },
+  "email":  "maxholsman@gmail.com",
+  "root":  ".",
+  "host":  "compsci-cluster-fitz-05",
+  "executable":  "/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/bin/python",
+  "cpu_count":  24,
+  "cpu_count_logical":  48,
+  "gpu":  "NVIDIA RTX A6000",
+  "gpu_count":  1,
+  "disk":  {
+    "/":  {
+      "total":  "7619250913280",
+      "used":  "479954194432"
+    }
+  },
+  "memory":  {
+    "total":  "810983231488"
+  },
+  "gpu_nvidia":  [
+    {
+      "name":  "NVIDIA RTX A6000",
+      "memoryTotal":  "51527024640",
+      "cudaCores":  10752,
+      "architecture":  "Ampere",
+      "uuid":  "GPU-3fdf2f8b-01ba-a592-00eb-cc444ee3fbe8"
+    }
+  ],
+  "cudaVersion":  "12.8",
+  "slurm":  {
+    "cluster_name":  "compsci_cluster",
+    "conf":  "/var/lib/slurm/slurmd/conf-cache/slurm.conf",
+    "cpus_on_node":  "2",
+    "gpus_on_node":  "1",
+    "gtids":  "0",
+    "job_account":  "nlplab",
+    "job_cpus_per_node":  "1",
+    "job_end_time":  "1762682458",
+    "job_gid":  "1000000",
+    "job_group":  "oitusers",
+    "job_id":  "10118154",
+    "job_name":  "bash",
+    "job_nodelist":  "compsci-cluster-fitz-05",
+    "job_num_nodes":  "1",
+    "job_partition":  "compsci-gpu",
+    "job_qos":  "normal",
+    "job_start_time":  "1762336858",
+    "job_uid":  "1395656",
+    "job_user":  "mth45",
+    "jobid":  "10118154",
+    "launch_node_ipaddr":  "152.3.143.21",
+    "localid":  "0",
+    "nnodes":  "1",
+    "nodeid":  "0",
+    "nodelist":  "compsci-cluster-fitz-05",
+    "nprocs":  "1",
+    "ntasks":  "1",
+    "oom_kill_step":  "0",
+    "prio_process":  "19",
+    "procid":  "0",
+    "pty_port":  "39253",
+    "pty_win_col":  "78",
+    "pty_win_row":  "6",
+    "srun_comm_host":  "152.3.143.21",
+    "srun_comm_port":  "42551",
+    "step_gpus":  "2",
+    "step_id":  "0",
+    "step_launcher_port":  "42551",
+    "step_nodelist":  "compsci-cluster-fitz-05",
+    "step_num_nodes":  "1",
+    "step_num_tasks":  "1",
+    "step_tasks_per_node":  "1",
+    "stepid":  "0",
+    "submit_dir":  "/usr/project/xtmp/mth45/Documents",
+    "submit_host":  "compsci-login-03",
+    "task_pid":  "3153551",
+    "tasks_per_node":  "1",
+    "topology_addr":  "compsci-cluster-fitz-05",
+    "topology_addr_pattern":  "node",
+    "umask":  "0022"
+  },
+  "writerId":  "33p5c6ivy8z1fllozee41bjf4f4lh33r"
+}

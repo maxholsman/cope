@@ -1,0 +1,20 @@
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [0]
+/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/pytorch_lightning/utilities/model_summary/model_summary.py:231: Precision bf16-mixed is not supported by the model summary.  Estimated model size in MB will not be accurate. Using 32 bits instead.
+
+  | Name    | Type                 | Params | Mode
+---------------------------------------------------------
+0 | model   | ProteinEditFlowModel | 742 M  | train
+1 | loss_fn | EditFlowsLoss        | 0      | train
+---------------------------------------------------------
+91.7 M    Trainable params
+651 M     Non-trainable params
+742 M     Total params
+2,970.815 Total estimated model params size (MB)
+170       Modules in train mode
+574       Modules in eval mode
+Epoch 9: 100%|█| 18268/18268 [1:16:06<00:00,  4.00it/s, v_num=coze, train/los                                                                               
+/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/torch/utils/data/dataloader.py:627: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  warnings.warn(
+/usr/project/xtmp/mth45/miniforge3/envs/EditFlows/lib/python3.10/site-packages/pytorch_lightning/loops/fit_loop.py:527: Found 574 module(s) in eval mode at the start of training. This may lead to unexpected behavior during training. If this is intentional, you can ignore this warning.
+                                                                                                                                                            
+`Trainer.fit` stopped: `max_epochs=10` reached.
