@@ -5,25 +5,23 @@ task: protein
 
 compute:
   ngpus: 1  # Single GPU for debugging
-  nodes: 8
+  nodes: 4
 
 logging:
   log_freq: 10  # More frequent logging for debugging
   log_lr_every: ${logging.log_freq}
   log_file_name: stdout.log
-  run_name: p2p_cas9_esm2_tokenized_loc_prop
+  run_name: under_1125_cont
   enable_wandb: True  # Disable wandb for test run
   entity: maximilianholsman
   project: Gated proposal model
   group: null
 
 data:
-  train_path: /usr/xtmp/mth45/Documents/programmable_biology_group/protein2pam-0.2.0/p2p_cas9_esm2_tokenized/train
-  val_path: /usr/xtmp/mth45/Documents/programmable_biology_group/protein2pam-0.2.0/p2p_cas9_esm2_tokenized/validation
-  # train: fasta  # Use FASTA dataset
-  # valid: fasta  # Use same dataset for validation
-  # fasta_path: /usr/xtmp/mth45/Documents/programmable_biology_group/gated-edit-proposal/data/cas9/cas9_dataset_esm2_tokenized
-  # fasta_path: /usr/xtmp/mth45/Documents/programmable_biology_group/EditFlows/flow_matching/examples/editflows/data/example_data.fa
+  train_path: /usr/xtmp/mth45/Documents/programmable_biology_group/gated-edit-proposal/data/cas9/cas9_dataset_esm2_tokenized_under_1125/train
+  val_path: /usr/xtmp/mth45/Documents/programmable_biology_group/gated-edit-proposal/data/cas9/cas9_dataset_esm2_tokenized_under_1125/validation
+  # train_path: /usr/xtmp/mth45/Documents/programmable_biology_group/protein2pam-0.2.0/p2p_cas9_esm2_tokenized/train
+  # val_path: /usr/xtmp/mth45/Documents/programmable_biology_group/protein2pam-0.2.0/p2p_cas9_esm2_tokenized/validation
   cache_dir: null  # Not needed for FASTA
   num_workers: 2  # Reduced for debugging
 
@@ -33,8 +31,8 @@ training:
   eval_freq: 1000  # Frequent evaluation
   perplexity_freq: 100  # Less frequent generation
   seed: 42
-  grad_accumulation_steps: 32  # Number of batches to accumulate before updating weights
-  loc_prop_path: True
+  grad_accumulation_steps: 64  # Number of batches to accumulate before updating weights
+  ckpt_path: /usr/xtmp/mth45/Documents/programmable_biology_group/EditFlows/flow_matching/editflows/outputs/lr5e-4_epoch100_scale1.5_optimal0_under_1125/checkpoint/last.ckpt
 
 eval:
   batch_size: 4
