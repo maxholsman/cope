@@ -480,9 +480,12 @@ class EditFlow(pl.LightningModule):
             x_0 = self.source_distribution.sample_x0_from_x1(x_1, pad_id=self.pad_id, allowed_tokens=allowed_tokens, scale_size=self.cfg.model.scale_size, bos_id = self.bos_id, eos_id = self.eos_id)
             t = torch.rand(B, device=self.device).clamp(max=0.9999)
 
-            sched = self.path.scheduler(t)
-            weight = sched.d_alpha_t / sched.sigma_t     # (B,)
-            # weight = self.path.scheduler.lambda_indep(t)
+            # Use lambda_indep if available (for convex schedulers), otherwise fallback to d_alpha_t / sigma_t
+            if hasattr(self.path.scheduler, 'lambda_indep'):
+                weight = self.path.scheduler.lambda_indep(t)  # (B,)
+            else:
+                sched = self.path.scheduler(t)
+                weight = sched.d_alpha_t / sched.sigma_t     # (B,)
 
             z_0, z_1 = build_z0_z1_with_alignment(x_0, x_1, self.eps_id, self.pad_id, self.bos_id, self.eos_id, p_optimal=self.cfg.model.p_optimal)
 
