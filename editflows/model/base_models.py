@@ -419,11 +419,13 @@ class EditFlow(pl.LightningModule):
         self.path = path
         self.model = model
         self.loss_fn = loss_fn
+        self.loc_prop_path = getattr(config.training, "loc_prop_path", False)
 
         self.bos_id = bos_id
         self.eos_id = eos_id
         self.pad_id = pad_id
         self.eps_id = getattr(self.path, "eps_id", -1)
+        self.lam_prop = getattr(self.cfg.training, "lambda_prop", 1.0)
 
         self._total_steps = None
 
@@ -476,29 +478,42 @@ class EditFlow(pl.LightningModule):
             allowed_tokens = torch.tensor([tok for tok in self.source_distribution._allowed_tokens if tok != self.eps_id]).to(self.device)
             
             x_0 = self.source_distribution.sample_x0_from_x1(x_1, pad_id=self.pad_id, allowed_tokens=allowed_tokens, scale_size=self.cfg.model.scale_size, bos_id = self.bos_id, eos_id = self.eos_id)
-            t = torch.rand(B, device=self.device)
+            t = torch.rand(B, device=self.device).clamp(max=0.9999)
 
             sched = self.path.scheduler(t)
             weight = sched.d_alpha_t / sched.sigma_t     # (B,)
 
             z_0, z_1 = build_z0_z1_with_alignment(x_0, x_1, self.eps_id, self.pad_id, self.bos_id, self.eos_id, p_optimal=self.cfg.model.p_optimal)
 
-            z_t = self.path.sample(z_0, z_1, t=t)
+            if self.loc_prop_path:
+                z_t, M_t, m_t = self.path.sample_localized(
+                    z0=z_0, z1=z_1, t=t, lambda_prop=self.lam_prop, return_M=True
+                )
+            else:
+                z_t = self.path.sample(z_0, z_1, t=t)
+                M_t = None
+                m_t = None
+            
             x_t, mask = remove_eps(z_t, self.eps_id, self.pad_id)
 
         lam_ins, logits_ins, lam_del, lam_sub, logits_sub = self.model(x_t=x_t, mask=mask,t=t)
 
-        return lam_ins, logits_ins, lam_del, lam_sub, logits_sub, z_t, z_1, x_t, mask, weight
+        return lam_ins, logits_ins, lam_del, lam_sub, logits_sub, z_t, z_1, x_t, mask, weight, M_t
     
 
     def training_step(self, batch, batch_idx):
         x_1 = torch.tensor(batch["input_ids"]).to(self.device)
         B = x_1.shape[0]
         
-        lam_ins, logits_ins, lam_del, lam_sub, logits_sub, z_t, z_1, x_t, mask, weight = self.preparation(x_1)
+        lam_ins, logits_ins, lam_del, lam_sub, logits_sub, z_t, z_1, x_t, mask, weight, M_t = self.preparation(x_1)
+
+        if self.loc_prop_path:
+            loss = self.loss_fn.forward_localized(lam_ins, logits_ins, lam_del, lam_sub, logits_sub, 
+                                z_t, z_1, x_t, mask, weight, M_t, self.lam_prop, self.eps_id, self.bos_id, self.eos_id)
+        else:
+            loss = self.loss_fn.forward(lam_ins, logits_ins, lam_del, lam_sub, logits_sub, 
+                                z_t, z_1, x_t, mask, weight, self.eps_id, self.bos_id, self.eos_id)
         
-        loss = self.loss_fn(lam_ins, logits_ins, lam_del, lam_sub, logits_sub, 
-                            z_t, z_1, x_t, mask, weight, self.eps_id, self.bos_id, self.eos_id)
         self.log("train_loss", loss, prog_bar=True, on_step=True, on_epoch=True, batch_size=B, sync_dist=True)
 
         return loss
@@ -507,10 +522,14 @@ class EditFlow(pl.LightningModule):
         x_1 = torch.tensor(batch["input_ids"]).to(self.device)
         B = x_1.shape[0]
         
-        lam_ins, logits_ins, lam_del, lam_sub, logits_sub, z_t, z_1, x_t, mask, weight = self.preparation(x_1)
+        lam_ins, logits_ins, lam_del, lam_sub, logits_sub, z_t, z_1, x_t, mask, weight, M_t = self.preparation(x_1)
         
-        loss = self.loss_fn(lam_ins, logits_ins, lam_del, lam_sub, logits_sub, 
-                            z_t, z_1, x_t, mask, weight, self.eps_id, self.bos_id, self.eos_id)
+        if self.loc_prop_path:
+            loss = self.loss_fn.forward_localized(lam_ins, logits_ins, lam_del, lam_sub, logits_sub, 
+                                z_t, z_1, x_t, mask, weight, M_t, self.lam_prop, self.eps_id, self.bos_id, self.eos_id)
+        else:
+            loss = self.loss_fn.forward(lam_ins, logits_ins, lam_del, lam_sub, logits_sub, 
+                                z_t, z_1, x_t, mask, weight, self.eps_id, self.bos_id, self.eos_id)
         self.log("val_loss", loss, prog_bar=True, on_step=True, on_epoch=True, batch_size=B, sync_dist=True)
 
         return loss

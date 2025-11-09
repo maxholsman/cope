@@ -1,4 +1,5 @@
 import os
+import argparse
 from datasets import load_from_disk
 import torch
 from torch.utils.data import DataLoader
@@ -20,14 +21,18 @@ from easydict import EasyDict as edict
 
 import pdb
 
-CONFIG_PATH = './configs/config_test.yaml'
+DEFAULT_CONFIG_PATH = '/usr/xtmp/mth45/Documents/programmable_biology_group/EditFlows/flow_matching/editflows/configs/config_test.yaml'
 
-def main():
-    with open(CONFIG_PATH, 'r') as f:
+def main(config_path=None):
+    # Use provided config path or default to hardcoded path
+    if config_path is None:
+        config_path = DEFAULT_CONFIG_PATH
+    
+    with open(config_path, 'r') as f:
         config_dict = yaml.safe_load(f)
     cfg = edict(config_dict)
 
-    run_name = f"lr{cfg.optim.lr}_epoch{cfg.optim.n_epochs}_scale{cfg.model.scale_size}_optimal{cfg.model.p_optimal}"
+    run_name = f"lr{cfg.optim.lr}_epoch{cfg.optim.n_epochs}_scale{cfg.model.scale_size}_optimal{cfg.model.p_optimal}_{cfg.logging.run_name}"
     workdir = os.path.join(cfg.work_dir, run_name)
     os.makedirs(workdir, exist_ok=True)
     
@@ -36,9 +41,9 @@ def main():
     # Data
     if cfg.task == 'protein':
         tokenizer = EsmTokenizer.from_pretrained("facebook/esm2_t33_650M_UR50D")
-        vocab_size = 24
+        vocab_size = tokenizer.vocab_size
         source_distribution = flow.get_source_distribution(
-            source_distribution=cfg.flow.source_distribution, vocab_size=vocab_size, special_token_ids=[0,1,2,3]
+            source_distribution=cfg.flow.source_distribution, vocab_size=vocab_size, special_token_ids=[0,1,2,3, 24, 25, 26, 27, 28, 29, 30, 31]
         )
         pad_id = 1
         bos_id = 0
@@ -85,10 +90,15 @@ def main():
         eos_id,
         cfg
     )
+    print(f"config.training.loc_prop_path: {cfg.training.loc_prop_path}")
 
     # Dataloader
     if cfg.task == 'protein':
-        train_dataloader, val_dataloader = data.get_data_loaders(config=cfg, data_state=None)
+        # train_dataloader, val_dataloader = data.get_data_loaders(config=cfg, data_state=None)
+        train_dataset = load_from_disk(cfg.data.train_path)
+        val_dataset = load_from_disk(cfg.data.val_path)
+        train_dataloader = DataLoader(train_dataset, batch_size=None, shuffle=True, num_workers=4)
+        val_dataloader = DataLoader(val_dataset, batch_size=None, shuffle=False, num_workers=4)
     elif cfg.task == 'smiles':
         train_dataset = load_from_disk('/scratch/pranamlab/tong/data/smiles/28k_mimetics/train')
         val_dataset = load_from_disk('/scratch/pranamlab/tong/data/smiles/28k_mimetics/validation')
@@ -114,16 +124,16 @@ def main():
     lrmon = LearningRateMonitor(logging_interval="step")
 
     wandb_logger = WandbLogger(
-        project='COPE',
+        project='Gated proposal model',
         name=run_name,
-        entity='programmablebio',
+        entity='maximilianholsman',
     )
     
     trainer = pl.Trainer(
         default_root_dir=workdir,
         accelerator="gpu" if torch.cuda.is_available() else "cpu",
         devices=cfg.compute.ngpus,
-        strategy="ddp" if cfg.compute.ngpus > 1 else "auto",
+        strategy="ddp_find_unused_parameters_true" if cfg.compute.ngpus > 1 else "auto",
         precision='bf16-mixed',
         max_epochs=cfg.optim.n_epochs,
         log_every_n_steps=10,
@@ -134,8 +144,14 @@ def main():
         logger=wandb_logger,
     )
 
-    trainer.fit(editflow, train_dataloader, val_dataloader)
+    # Get checkpoint path from config (if specified)
+    ckpt_path = getattr(cfg.training, 'ckpt_path', None) or getattr(cfg, 'ckpt_path', None)
+    trainer.fit(editflow, train_dataloader, val_dataloader, ckpt_path=ckpt_path if ckpt_path else None)
 
 
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser(description='Train EditFlow model')
+    parser.add_argument('--config', type=str, default=None,
+                        help='Path to config YAML file (default: uses hardcoded default config)')
+    args = parser.parse_args()
+    main(config_path=args.config)

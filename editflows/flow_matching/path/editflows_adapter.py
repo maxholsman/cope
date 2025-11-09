@@ -83,3 +83,27 @@ class EditFlowsPathAdapter:
         z_t = torch.where(flip, z1, z0)      # (B, N)
 
         return z_t
+    
+    @torch.no_grad()
+    def sample_localized(
+        self,
+        z0: Tensor,                 # (B, N)
+        z1: Tensor,                 # (B, N)
+        t: Tensor,                  # () or (B,)
+        lambda_prop: float | Tensor,
+        return_M: bool = False,
+    ):
+        """
+        Sample z_t using localized propagation (Appendix C.1).
+        Returns:
+          z_t, (optionally) M_t and m_t
+        Also stores last_M_t/last_m_t for convenience-based retrieval.
+        """
+        z_t, M_t, m_t = self.path.sample_localized(
+            z0=z0, z1=z1, t=t, lambda_prop=lambda_prop, return_M=return_M
+        )
+        self.last_M_t = M_t
+        self.last_m_t = m_t
+        if return_M:
+            return z_t, M_t, m_t
+        return z_t

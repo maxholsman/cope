@@ -87,6 +87,82 @@ class MixtureDiscreteProbPath(ProbPath):
         x_t = torch.where(condition=source_indices, input=x_0, other=x_1)
 
         return DiscretePathSample(x_t=x_t, x_1=x_1, x_0=x_0, t=t)
+    
+    @torch.no_grad()
+    def sample_localized(
+        self,
+        z0: torch.Tensor,              # (B, N) aligned (ε allowed)
+        z1: torch.Tensor,              # (B, N) aligned (ε allowed)
+        t: torch.Tensor,               # () or (B,)
+        lambda_prop: float | torch.Tensor,  # λ_prop (scalar or per-batch)
+        return_M: bool = True,
+    ) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor | None]:
+        """
+        Localized sampling per Appendix C.1 using the ONE-STEP inverse-CDF sampler:
+
+          1) U ~ Uniform(0,1), t*_all = kappa^{-1}(U)
+             seeds = (U <= kappa(t)), t* = seeds ? t*_all : t
+          2) Propagate left/right with Poisson(λ_prop * (t - t*))
+          3) Collapse M_t (row-wise CTMCs) -> m_t (columnwise OR)
+          4) z_t = where(m_t & (z0!=z1), z1, z0)
+
+        Returns:
+          z_t, (optional) M_t (B,N,N) bool, (optional) m_t (B,N) bool
+        """
+        device = z0.device
+        B, N = z0.shape
+
+        # Normalize shapes
+        if t.dim() == 0:
+            t = t.expand(B)                         # (B,)
+        kappa_t = self.scheduler.kappa(t)           # (B,)
+        if not torch.is_tensor(lambda_prop):
+            lambda_prop = torch.tensor(lambda_prop, dtype=kappa_t.dtype, device=device)
+        if lambda_prop.dim() == 0:
+            lambda_prop = lambda_prop.expand(B)     # (B,)
+
+        # ========= ONE-STEP SAMPLER (CHANGED BLOCK) =========
+        # U ~ Uniform(0,1): unconditional draw for the first-activation time via inverse-CDF
+        U = torch.rand(B, N, device=device)                         # (B, N) in [0,1]
+        t_star_all = self.scheduler.kappa_inverse(U)                # (B, N) unconditional T*
+
+        # Seed indicator: "activated by time t?"  <=>  T* <= t  <=>  U <= κ(t)
+        seeds = (U <= kappa_t.view(B, 1))                           # (B, N) bool
+
+        # Truncated activation time: if not seeded, set t* = t so Δt=0
+        t_star = torch.where(seeds, t_star_all, t.view(B, 1))       # (B, N)
+        # =====================================================
+
+        # Propagation window and Poisson spreads
+        delta = (t.view(B, 1) - t_star).clamp_min(0.0)              # (B, N)
+        rate = (lambda_prop.view(B, 1) * delta).to(torch.float32)   # (B, N)
+        left_ext  = torch.poisson(rate)                              # (B, N)
+        right_ext = torch.poisson(rate)                              # (B, N)
+
+        # Zero extents where there is no seed
+        left_ext  = (left_ext  * seeds.float()).to(torch.int64)
+        right_ext = (right_ext * seeds.float()).to(torch.int64)
+
+        # Paint M_t row-by-row as contiguous intervals around each diagonal
+        M_t = torch.zeros((B, N, N), dtype=torch.bool, device=device)
+        for b in range(B):
+            for i in range(N):
+                if not seeds[b, i]:
+                    continue
+                L = max(0, i - int(left_ext[b, i].item()))
+                R = min(N - 1, i + int(right_ext[b, i].item()))
+                M_t[b, i, L : R + 1] = True
+
+        # Collapse to m_t (columnwise OR across rows)
+        m_t = M_t.any(dim=1)                                       # (B, N) bool
+
+        # Build z_t (apply mask only where z0 != z1)
+        diff = (z0 != z1)
+        z_t = torch.where(m_t & diff, z1, z0)                      # (B, N)
+
+        if return_M:
+            return z_t, M_t, m_t
+        return z_t, None, None
 
     def posterior_to_velocity(
         self, posterior_logits: Tensor, x_t: Tensor, t: Tensor

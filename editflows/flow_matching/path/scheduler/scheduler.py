@@ -137,6 +137,16 @@ class PolynomialConvexScheduler(ConvexScheduler):
 
     def kappa_inverse(self, kappa: Tensor) -> Tensor:
         return torch.pow(kappa, 1.0 / self.n)
+    
+    def kappa(self, t: Tensor) -> Tensor:
+        """Return κ(t) = α(t)."""
+        return self.__call__(t).alpha_t
+
+    def lambda_indep(self, t: Tensor) -> Tensor:
+        """Return λ_indep(t) = kappa_dot / (1 - kappa)."""
+        out = self.__call__(t)
+        return out.d_alpha_t / (1.0 - out.alpha_t).clamp_min(1e-12)
+
 
 
 class VPScheduler(Scheduler):

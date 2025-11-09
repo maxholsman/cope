@@ -54,7 +54,7 @@ def step(
         allowed_tokens = torch.tensor([tok for tok in source_distribution._allowed_tokens if tok != eps_id]).to(device)
         
         x_0 = source_distribution.sample_x0_from_x1(x_1, pad_id=pad_id, allowed_tokens=allowed_tokens, scale_size=2, bos_id = bos_id, eos_id = eos_id)
-        t = torch.rand(B, device=device)
+        t = torch.rand(B, device=device).clamp(max=0.9999)
 
         sched = path.scheduler(t)
         precomputed_weight = sched.d_alpha_t / sched.sigma_t     # (B,)
