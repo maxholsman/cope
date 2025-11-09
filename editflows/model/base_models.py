@@ -481,8 +481,8 @@ class EditFlow(pl.LightningModule):
             t = torch.rand(B, device=self.device).clamp(max=0.9999)
 
             # Use lambda_indep if available (for convex schedulers), otherwise fallback to d_alpha_t / sigma_t
-            if hasattr(self.path.scheduler, 'lambda_indep'):
-                weight = self.path.scheduler.lambda_indep(t)  # (B,)
+            if hasattr(self.path, 'lambda_indep'):
+                weight = self.path.lambda_indep(t)  # (B,)
             else:
                 sched = self.path.scheduler(t)
                 weight = sched.d_alpha_t / sched.sigma_t     # (B,)
