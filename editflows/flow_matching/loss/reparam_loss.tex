@@ -1,0 +1,45 @@
+original loss formulation:
+L = sum_p (λ_ins,p + λ_del,p + λ_sub,p) - sum_i w_i · log u_i
+
+= sum_p (lam_ins[p] + lam_del[p] + lam_sub[p]) - sum_i w_i · log u_i   (vanilla code)
+
+
+where
+- p                = position index in the current sequence x_t
+- i                = index over aligned columns (z_t, z_1) that need an edit (z_t[i] ≠ z_1[i])
+- x_t              = current token sequence at time t
+- z_t, z_1         = aligned current / target sequences (with ε for gaps)
+- λ_ins,p          = insertion rate at position p  (paper)
+- λ_del,p          = deletion rate at position p   (paper)
+- λ_sub,p          = substitution rate at position p (paper)
+- lam_ins[p]       = λ_ins,p as used in the code
+- lam_del[p]       = λ_del,p as used in the code
+- lam_sub[p]       = λ_sub,p as used in the code
+- u_i              = required edit rate at site i:
+                     * delete:      u_i = lam_del[pos]
+                     * substitute:  u_i = lam_sub[pos] · Q_sub(pos, target_token)
+                     * insert:      u_i = lam_ins[pos] · Q_ins(pos, target_token)
+- Q_ins, Q_sub     = token distributions from logits_ins, logits_sub
+- w_i              = per-edit weight (in vanilla: precomputed_weight = κ̇_t / (1 − κ_t))
+
+
+Reparametrized loss formulation:
+L = γ_rate · [ sum_p λ_total,p - sum_i w_i · log λ_total,site(i) ]
+  + γ_edit · [ - sum_i w_i · log π_i ]
+
+
+where
+- λ_total,p        = total edit rate at position p (code: lam_total[p] ≥ 0)
+- site(i)          = position in x_t used for edit i (token position or neighboring gap)
+- logits_type[p]   = 3-way logits over {insert, delete, substitute} at position p
+- π_type[p]        = softmax(logits_type[p])  (probability over edit types)
+- logits_ins[p]    = token logits for insertion at position p
+- logits_sub[p]    = token logits for substitution at position p
+- π_i              = probability of the specific required edit i:
+                     * delete:      π_i = π_type[site(i), delete]
+                     * substitute:  π_i = π_type[site(i), sub] · Q_sub(site(i), target_token)
+                     * insert:      π_i = π_type[site(i), ins] · Q_ins(site(i), target_token)
+- Q_ins, Q_sub     = token distributions from logits_ins, logits_sub
+- w_i              = same per-edit weight as above
+- γ_rate           = scalar weight gamma_rate for the rate terms
+- γ_edit           = scalar weight gamma_edit for the edit terms

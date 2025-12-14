@@ -42,6 +42,9 @@ class EditFlowsPathAdapter:
     def scheduler(self, t: Tensor):
         return self.path.scheduler(t)
 
+    def lambda_indep(self, t: Tensor):
+        return self.path.scheduler.lambda_indep(t)
+        
     @torch.no_grad()
     def sample(
         self,

@@ -100,6 +100,21 @@ class ConvexScheduler(Scheduler):
 
         return self.kappa_inverse(kappa=kappa_t)
 
+    def lambda_indep(self, t: Tensor) -> Tensor:
+        r"""
+        Return :math:`\lambda_{\text{indep}}(t) = \frac{\dot{\kappa}(t)}{1 - \kappa(t)}`.
+
+        For convex schedulers, :math:`\kappa(t) = \alpha(t)`, so this is :math:`\frac{\dot{\alpha}(t)}{1 - \alpha(t)}`.
+
+        Args:
+            t (Tensor): times in [0,1], shape (...).
+
+        Returns:
+            Tensor: :math:`\lambda_{\text{indep}}(t)`, shape (...)
+        """
+        out = self.__call__(t)
+        return out.d_alpha_t / (1.0 - out.alpha_t).clamp_min(1e-12)
+
 
 class CondOTScheduler(ConvexScheduler):
     """CondOT Scheduler."""

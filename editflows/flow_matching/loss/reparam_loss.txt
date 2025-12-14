@@ -1,0 +1,45 @@
+
+
+**Original loss**
+
+$$
+L = L_{rate} + L_{edit} = ∑_{j=1}^{L} (λ_{ins,j} + λ_{del,j} + λ_{sub,j}) − w ∑_{e∈𝓔} log (u_e)
+$$
+
+Where for each event \(e\) at position \(j_e\):
+
+\[
+u_e =
+\begin{cases}
+\lambda_{\text{del}, j_e}                                     & \text{if \(e\) is a deletion}, \\[6pt]
+\lambda_{\text{sub}, j_e}\, Q_{\text{sub}, j_e}(y_e)          & \text{if \(e\) is a substitution}, \\[6pt]
+\lambda_{\text{ins}, j_e}\, Q_{\text{ins}, j_e}(y_e)          & \text{if \(e\) is an insertion}.
+\end{cases}
+\]
+
+
+----------------------------------------------------------
+
+**Reparametrized loss**
+
+$λ_{tot, j} = \text{total edit rate for position j} = λ_{del,j} + λ_{sub,j} + λ_{ins,j}$
+
+$\pi_{j}(\text{ins / sub / del}) = \text{distribution of edit types at position j} = \displaystyle\frac{λ_{del/ins/sub,j}}{λ_{tot,j}}$
+
+$$
+L = L_{\text{rate}} + L_{\text{edit}} = \gamma_{\text{rate}} [\sum_{j=1}^{L} \lambda_{\text{tot},j} - w \sum_{e \in \mathcal{E}} \log(\lambda_{\text{tot}, j_e})] + \gamma_{\text{edit}}
+[- w \sum_{e \in \mathcal{E}} \log(v_e)]
+$$
+
+
+Where for each event \(e\) at position \(j_e\):
+
+\[
+v_e =
+\begin{cases}
+\pi_{, j_e}(\text{DEL})                              & \text{if \(e\) is a deletion}, \\[6pt]
+\pi_{j_e}(\text{SUB}) \, Q_{\text{sub}, j_e}(y_e)  & \text{if \(e\) is a substitution}, \\[6pt]
+\pi_{j_e}(\text{INS}) \, Q_{\text{ins}, j_e}(y_e)  & \text{if \(e\) is an insertion}.
+\end{cases}
+\]
+
