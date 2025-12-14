@@ -15,14 +15,48 @@ from transformers import EsmTokenizer
 # ---------------------------------------------------------------------
 # CONFIG
 # ---------------------------------------------------------------------
-FASTA_PATH = '/usr/xtmp/mth45/Documents/programmable_biology_group/cope/predictors/protein2pam-0.2.0/protein2pam_db_v1.0/cas9_full.fasta'
-OUTPUT_DIR = '/usr/xtmp/mth45/Documents/programmable_biology_group/gated-edit-proposal/data/cas9/cas9_dataset_esm2_tokenized_under_1125'  # where to save with save_to_disk
 
-BATCH_SIZE = 4
+BATCH_SIZE = 1
+SOURCE_DATASET = 'crispr_cas_atlas'
 TRAIN_RATIO, VAL_RATIO, TEST_RATIO = 0.8, 0.1, 0.1
+MAX_LENGTH = None
+MIN_LENGTH = 20
+MAX_DATA_SIZE = None
+NUM_REPEATS = None
+PAD_ID = 1
 
-PAD_ID = 0
+if SOURCE_DATASET == 'uniprot_sprot':
+    FASTA_PATH = '/usr/xtmp/mth45/Documents/programmable_biology_group/cope/data/uniprot_sprot.fasta'
+elif SOURCE_DATASET == 'crispr_cas_atlas':
+    # FASTA_PATH = f'/usr/xtmp/mth45/Documents/programmable_biology_group/cope/data/crispr_cas_atlas/cas9_only/cas9.fasta'
+    FASTA_PATH = f'/usr/xtmp/mth45/Documents/programmable_biology_group/cope/data/crispr_cas_atlas/cas9_sequences_reduced.fasta'
+elif SOURCE_DATASET == 'gfp':
+    FASTA_PATH = f'/usr/xtmp/mth45/Documents/programmable_biology_group/cope/data/gfp/fpbase_valid_gfps.fasta'
+else:
+    raise ValueError(f"Invalid source dataset: {SOURCE_DATASET}")
 
+if MAX_DATA_SIZE is not None:
+    if MAX_DATA_SIZE // 1000 > 0:
+        if SOURCE_DATASET == 'uniprot_sprot':
+            OUTPUT_DIR = f'/usr/xtmp/mth45/Documents/programmable_biology_group/cope/data/uniprot/uniprot_sprot_dataset_esm2_tokenized_bs{BATCH_SIZE}_leq{MAX_LENGTH}_n{MAX_DATA_SIZE//1000}k'  # where to save with save_to_disk
+        elif SOURCE_DATASET == 'crispr_cas_atlas':
+            OUTPUT_DIR = f'/usr/xtmp/mth45/Documents/programmable_biology_group/cope/data/crispr_cas_atlas/dataset/{SOURCE_DATASET}_dataset_esm2_tokenized_bs{BATCH_SIZE}_leq{MAX_LENGTH}_n{MAX_DATA_SIZE//1000}k'  # where to save with save_to_disk
+        else:
+            raise ValueError(f"Invalid source dataset: {SOURCE_DATASET}")
+    else:
+        if SOURCE_DATASET == 'uniprot_sprot':
+            OUTPUT_DIR = f'/usr/xtmp/mth45/Documents/programmable_biology_group/cope/data/uniprot/uniprot_sprot_dataset_esm2_tokenized_bs{BATCH_SIZE}_leq{MAX_LENGTH}_n{MAX_DATA_SIZE}'  # where to save with save_to_disk
+        elif SOURCE_DATASET == 'crispr_cas_atlas':
+            OUTPUT_DIR = f'/usr/xtmp/mth45/Documents/programmable_biology_group/cope/data/crispr_cas_atlas/dataset/{SOURCE_DATASET}_dataset_esm2_tokenized_bs{BATCH_SIZE}_leq{MAX_LENGTH}_n{MAX_DATA_SIZE}'  # where to save with save_to_disk
+        else:
+            raise ValueError(f"Invalid source dataset: {SOURCE_DATASET}")
+else:
+    if SOURCE_DATASET == 'uniprot_sprot':
+        OUTPUT_DIR = f'/usr/xtmp/mth45/Documents/programmable_biology_group/cope/data/uniprot/uniprot_sprot_dataset_esm2_tokenized_bs{BATCH_SIZE}_leq{MAX_LENGTH}'  # where to save with save_to_disk
+    elif SOURCE_DATASET == 'crispr_cas_atlas':
+        OUTPUT_DIR = f'/usr/xtmp/mth45/Documents/programmable_biology_group/cope/data/crispr_cas_atlas/dataset/{SOURCE_DATASET}_dataset_esm2_tokenized_bs{BATCH_SIZE}_leq{MAX_LENGTH}'  # where to save with save_to_disk
+    else:
+        raise ValueError(f"Invalid source dataset: {SOURCE_DATASET}")
 # ------------------------------------------------------------
 # 1) Load CSV and convert SMILES -> SELFIES
 # ------------------------------------------------------------
@@ -44,7 +78,9 @@ sequences = list(set(sequences))
 print(f"len(sequences) before filtering: {len(sequences)}")
 sequences = [
     seq for seq in sequences
-    if all(aa in "ACDEFGHIKLMNPQRSTVWY" for aa in seq) and len(seq) <= 1125
+    if all(aa in "ACDEFGHIKLMNPQRSTVWY" for aa in seq)
+    and (MAX_LENGTH is None or len(seq) <= MAX_LENGTH)
+    and (MIN_LENGTH is None or len(seq) >= MIN_LENGTH)
 ]
 print(f"len(sequences) after filtering: {len(sequences)}")
 print(f"Average length of sequences: {sum(len(seq) for seq in sequences) / len(sequences)}")
@@ -55,6 +91,12 @@ print(f"Vocabulary Size: {tokenizer.vocab_size}")
 
 # shuffle before splitting
 random.shuffle(sequences)
+
+if MAX_DATA_SIZE is not None:
+    print(f"Truncating to {MAX_DATA_SIZE} sequences")
+    sequences = sequences[:MAX_DATA_SIZE]
+    print(f"len(sequences) after truncation: {len(sequences)}")
+
 n = len(sequences)
 n_train = int(n * TRAIN_RATIO)
 n_val = int(n * VAL_RATIO)
@@ -63,6 +105,18 @@ train_sequences = sequences[:n_train]
 val_sequences   = sequences[n_train:n_train + n_val]
 test_sequences  = sequences[n_train + n_val:]
 
+print(f"len(train_sequences) before repetition: {len(train_sequences)}")
+print(f"len(val_sequences) before repetition: {len(val_sequences)}")
+print(f"len(test_sequences) before repetition: {len(test_sequences)}")
+
+if NUM_REPEATS is not None:
+    train_sequences = train_sequences * NUM_REPEATS
+    val_sequences = val_sequences * NUM_REPEATS
+    test_sequences = test_sequences * NUM_REPEATS
+
+print(f"len(train_sequences) after repetition: {len(train_sequences)}")
+print(f"len(val_sequences) after repetition: {len(val_sequences)}")
+print(f"len(test_sequences) after repetition: {len(test_sequences)}")
 # ------------------------------------------------------------
 # 2) helper: tokenize SELFIES using the built tokenizer
 # ------------------------------------------------------------
@@ -150,6 +204,12 @@ def build_batched_dataset(sequences, batch_size=64, pad_id=0):
 train_ds = build_batched_dataset(train_sequences, batch_size=BATCH_SIZE, pad_id=PAD_ID)
 val_ds   = build_batched_dataset(val_sequences,   batch_size=BATCH_SIZE, pad_id=PAD_ID)
 test_ds  = build_batched_dataset(test_sequences,  batch_size=BATCH_SIZE, pad_id=PAD_ID)
+
+for ds in [train_ds, val_ds, test_ds]:
+    num_seqs = 0
+    for item in ds:
+        num_seqs += len(item["input_ids"])
+    print(f"Number of sequences in {ds}: {num_seqs}")
 
 dsdict = DatasetDict(
     {

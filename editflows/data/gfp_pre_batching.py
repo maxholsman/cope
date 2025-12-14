@@ -1,6 +1,4 @@
 import os
-import random
-import pandas as pd
 from datasets import Dataset, DatasetDict
 
 # import selfies as sf
@@ -15,54 +13,95 @@ from transformers import EsmTokenizer
 # ---------------------------------------------------------------------
 # CONFIG
 # ---------------------------------------------------------------------
-FASTA_PATH = '/usr/xtmp/mth45/Documents/programmable_biology_group/cope/predictors/protein2pam-0.2.0/protein2pam_db_v1.0/cas9_full.fasta'
-OUTPUT_DIR = '/usr/xtmp/mth45/Documents/programmable_biology_group/gated-edit-proposal/data/cas9/cas9_dataset_esm2_tokenized_under_1125'  # where to save with save_to_disk
 
-BATCH_SIZE = 4
-TRAIN_RATIO, VAL_RATIO, TEST_RATIO = 0.8, 0.1, 0.1
+BATCH_SIZE = 1
+SOURCE_DATASET = 'gfp'
+MAX_LENGTH = 1500
+MIN_LENGTH = None
+MAX_DATA_SIZE = None
+NUM_REPEATS = None
+PAD_ID = 1
 
-PAD_ID = 0
+# Input directory containing train.fasta, val.fasta, test.fasta
+if SOURCE_DATASET == 'gfp':
+    INPUT_DIR = '/usr/xtmp/mth45/Documents/programmable_biology_group/cope/data/gfp/fpbase_pfamPF01353'  # directory with train.fasta, val.fasta, test.fasta
+    TRAIN_FASTA = os.path.join(INPUT_DIR, 'train.fasta')
+    VAL_FASTA = os.path.join(INPUT_DIR, 'val.fasta')
+    TEST_FASTA = os.path.join(INPUT_DIR, 'test.fasta')
+else:
 
+    raise ValueError(f"Invalid source dataset: {SOURCE_DATASET}")
+
+# Output directory for tokenized and batched dataset
+if MAX_DATA_SIZE is not None:
+    if MAX_DATA_SIZE // 1000 > 0:
+        OUTPUT_DIR = f'/usr/xtmp/mth45/Documents/programmable_biology_group/cope/data/gfp/gfp_dataset_esm2_tokenized_bs{BATCH_SIZE}_leq{MAX_LENGTH}_n{MAX_DATA_SIZE//1000}k'
+    else:
+        OUTPUT_DIR = f'/usr/xtmp/mth45/Documents/programmable_biology_group/cope/data/gfp/gfp_dataset_esm2_tokenized_bs{BATCH_SIZE}_leq{MAX_LENGTH}_n{MAX_DATA_SIZE}'
+else:
+    OUTPUT_DIR = f'/usr/xtmp/mth45/Documents/programmable_biology_group/cope/data/gfp/gfp_dataset_esm2_tokenized_bs{BATCH_SIZE}_leq{MAX_LENGTH}'
 # ------------------------------------------------------------
-# 1) Load CSV and convert SMILES -> SELFIES
+# 1) Load sequences from pre-split FASTA files
 # ------------------------------------------------------------
 from Bio import SeqIO
 
-sequences = []
-print("Loading sequences from FASTA and validating…")
-for record in SeqIO.parse(FASTA_PATH, "fasta"):
-    s = str(record.seq)
-    # skip empty sequences
-    if not s:
-        continue
-    sequences.append(s)
+def load_and_filter_sequences(fasta_path, split_name):
+    """Load sequences from a FASTA file and filter them."""
+    sequences = []
+    print(f"Loading {split_name} sequences from {fasta_path}...")
+    for record in SeqIO.parse(fasta_path, "fasta"):
+        s = str(record.seq)
+        # skip empty sequences
+        if not s:
+            continue
+        sequences.append(s)
+    
+    # Remove duplicates within this split
+    sequences = list(set(sequences))
+    
+    # Filter out any sequence that contains non-natural amino acids
+    print(f"len({split_name}) before filtering: {len(sequences)}")
+    sequences = [
+        seq for seq in sequences
+        if all(aa in "ACDEFGHIKLMNPQRSTVWY" for aa in seq)
+        and (MAX_LENGTH is None or len(seq) <= MAX_LENGTH)
+        and (MIN_LENGTH is None or len(seq) >= MIN_LENGTH)
+    ]
+    print(f"len({split_name}) after filtering: {len(sequences)}")
+    if sequences:
+        print(f"Average length of {split_name} sequences: {sum(len(seq) for seq in sequences) / len(sequences):.1f}")
+    
+    return sequences
 
-# remove all duplicates 
-sequences = list(set(sequences))
+# Load sequences from each split
+train_sequences = load_and_filter_sequences(TRAIN_FASTA, "train")
+val_sequences = load_and_filter_sequences(VAL_FASTA, "val")
+test_sequences = load_and_filter_sequences(TEST_FASTA, "test")
 
-## filter out any sequence that contains non-natural amino acids
-print(f"len(sequences) before filtering: {len(sequences)}")
-sequences = [
-    seq for seq in sequences
-    if all(aa in "ACDEFGHIKLMNPQRSTVWY" for aa in seq) and len(seq) <= 1125
-]
-print(f"len(sequences) after filtering: {len(sequences)}")
-print(f"Average length of sequences: {sum(len(seq) for seq in sequences) / len(sequences)}")
+# Apply MAX_DATA_SIZE truncation if specified (applies to each split independently)
+if MAX_DATA_SIZE is not None:
+    print(f"Truncating each split to {MAX_DATA_SIZE} sequences")
+    train_sequences = train_sequences[:MAX_DATA_SIZE]
+    val_sequences = val_sequences[:MAX_DATA_SIZE]
+    test_sequences = test_sequences[:MAX_DATA_SIZE]
+    print(f"len(train_sequences) after truncation: {len(train_sequences)}")
+    print(f"len(val_sequences) after truncation: {len(val_sequences)}")
+    print(f"len(test_sequences) after truncation: {len(test_sequences)}")
 
-# ---- Build vocab from all valid SELFIES ----
+# Apply NUM_REPEATS if specified
+if NUM_REPEATS is not None:
+    print(f"Repeating each split {NUM_REPEATS} times")
+    train_sequences = train_sequences * NUM_REPEATS
+    val_sequences = val_sequences * NUM_REPEATS
+    test_sequences = test_sequences * NUM_REPEATS
+
+print(f"Final len(train_sequences): {len(train_sequences)}")
+print(f"Final len(val_sequences): {len(val_sequences)}")
+print(f"Final len(test_sequences): {len(test_sequences)}")
+
+# ---- Build vocab from tokenizer ----
 tokenizer = EsmTokenizer.from_pretrained("facebook/esm2_t33_650M_UR50D")
 print(f"Vocabulary Size: {tokenizer.vocab_size}")
-
-# shuffle before splitting
-random.shuffle(sequences)
-n = len(sequences)
-n_train = int(n * TRAIN_RATIO)
-n_val = int(n * VAL_RATIO)
-
-train_sequences = sequences[:n_train]
-val_sequences   = sequences[n_train:n_train + n_val]
-test_sequences  = sequences[n_train + n_val:]
-
 # ------------------------------------------------------------
 # 2) helper: tokenize SELFIES using the built tokenizer
 # ------------------------------------------------------------
@@ -150,6 +189,12 @@ def build_batched_dataset(sequences, batch_size=64, pad_id=0):
 train_ds = build_batched_dataset(train_sequences, batch_size=BATCH_SIZE, pad_id=PAD_ID)
 val_ds   = build_batched_dataset(val_sequences,   batch_size=BATCH_SIZE, pad_id=PAD_ID)
 test_ds  = build_batched_dataset(test_sequences,  batch_size=BATCH_SIZE, pad_id=PAD_ID)
+
+for ds in [train_ds, val_ds, test_ds]:
+    num_seqs = 0
+    for item in ds:
+        num_seqs += len(item["input_ids"])
+    print(f"Number of sequences in {ds}: {num_seqs}")
 
 dsdict = DatasetDict(
     {

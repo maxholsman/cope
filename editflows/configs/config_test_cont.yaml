@@ -11,15 +11,15 @@ logging:
   log_freq: 10  # More frequent logging for debugging
   log_lr_every: ${logging.log_freq}
   log_file_name: stdout.log
-  run_name: under_1125_cont
+  run_name: p2p_cas9_esm2_tokenized
   enable_wandb: True  # Disable wandb for test run
   entity: maximilianholsman
   project: Gated proposal model
   group: null
 
 data:
-  train_path: /usr/xtmp/mth45/Documents/programmable_biology_group/gated-edit-proposal/data/cas9/cas9_dataset_esm2_tokenized_under_1125/train
-  val_path: /usr/xtmp/mth45/Documents/programmable_biology_group/gated-edit-proposal/data/cas9/cas9_dataset_esm2_tokenized_under_1125/validation
+  train_path: /usr/xtmp/mth45/Documents/programmable_biology_group/cope/predictors/protein2pam-0.2.0/p2p_cas9_esm2_tokenized/train
+  val_path: /usr/xtmp/mth45/Documents/programmable_biology_group/cope/predictors/protein2pam-0.2.0/p2p_cas9_esm2_tokenized/validation
   # train_path: /usr/xtmp/mth45/Documents/programmable_biology_group/protein2pam-0.2.0/p2p_cas9_esm2_tokenized/train
   # val_path: /usr/xtmp/mth45/Documents/programmable_biology_group/protein2pam-0.2.0/p2p_cas9_esm2_tokenized/validation
   cache_dir: null  # Not needed for FASTA
@@ -31,8 +31,9 @@ training:
   eval_freq: 1000  # Frequent evaluation
   perplexity_freq: 100  # Less frequent generation
   seed: 42
-  grad_accumulation_steps: 64  # Number of batches to accumulate before updating weights
-  ckpt_path: /usr/xtmp/mth45/Documents/programmable_biology_group/EditFlows/flow_matching/editflows/outputs/lr5e-4_epoch100_scale1.5_optimal0_under_1125/checkpoint/last.ckpt
+  grad_accumulation_steps: 32  # Number of batches to accumulate before updating weights
+  lam_prop: 0.5
+  ckpt_path: /usr/xtmp/mth45/Documents/programmable_biology_group/cope/EditFlows/flow_matching/editflows/outputs/lr5e-4_epoch100_scale1.5_optimal0_p2p_cas9_esm2_tokenized/checkpoint/epoch0013-val3396.69.ckpt
 
 eval:
   batch_size: 4
@@ -44,7 +45,7 @@ eval:
 optim:
   weight_decay: 0.03
   optimizer: AdamW
-  lr: 5e-4
+  lr: 5e-5
   beta1: 0.9
   beta2: 0.95
   eps: 1e-8

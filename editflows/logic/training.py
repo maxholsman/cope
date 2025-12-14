@@ -69,7 +69,7 @@ def step(
         # pdb.set_trace()
         lam_ins, logits_ins, lam_del, lam_sub, logits_sub = state.model(x_t=x_t, mask=mask,t=t)
 
-        loss = loss_fn(lam_ins, logits_ins, lam_del, lam_sub, logits_sub, 
+        loss, loss_components = loss_fn(lam_ins, logits_ins, lam_del, lam_sub, logits_sub, 
                        z_t, z_1, x_t, mask, precomputed_weight, eps_id, bos_id, eos_id)
 
     if training:
@@ -80,6 +80,13 @@ def step(
             optim_params=optim_params,
             logger=logger,
         )
+        # Log component losses if logger is available
+        if logger is not None:
+            logger.log_loss(value=loss_components["loss_base"].item(), step=state.step, name="loss_base")
+            logger.log_loss(value=loss_components["loss_rate"].item(), step=state.step, name="loss_rate")
+            logger.log_loss(value=loss_components["loss_edit"].item(), step=state.step, name="loss_edit")
+            logger.log_loss(value=loss_components["loss_aux_unweighted"].item(), step=state.step, name="loss_aux_unweighted")
+            logger.log_loss(value=loss_components["loss_aux_weighted"].item(), step=state.step, name="loss_aux_weighted")
 
     return loss.detach()
 

@@ -8,7 +8,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
 from pytorch_lightning.loggers import WandbLogger
 
 from data import data
-from model.base_models import EditFlow, ProteinEditFlowModel, SMILESEditFlowModel
+from model.base_models import EditFlow, ProteinEditFlowModel, SMILESEditFlowModel, ReparameterizedProteinEditFlowModel, ReparameterizedSMILESEditFlowModel
 from smiles_tokenizer.my_tokenizers import SMILES_SPE_Tokenizer
 from smiles_tokenizer.selfies_tokenizers import SelfiesTokenizer
 
@@ -21,7 +21,7 @@ from easydict import EasyDict as edict
 
 import pdb
 
-DEFAULT_CONFIG_PATH = '/usr/xtmp/mth45/Documents/programmable_biology_group/EditFlows/flow_matching/editflows/configs/config_test.yaml'
+DEFAULT_CONFIG_PATH = '/usr/xtmp/mth45/Documents/programmable_biology_group/cope/EditFlows/flow_matching/editflows/configs/config_test.yaml'
 
 def main(config_path=None):
     # Use provided config path or default to hardcoded path
@@ -31,6 +31,8 @@ def main(config_path=None):
     with open(config_path, 'r') as f:
         config_dict = yaml.safe_load(f)
     cfg = edict(config_dict)
+
+    print(f"cfg: {cfg}")
 
     run_name = f"lr{cfg.optim.lr}_epoch{cfg.optim.n_epochs}_scale{cfg.model.scale_size}_optimal{cfg.model.p_optimal}_{cfg.logging.run_name}"
     workdir = os.path.join(cfg.work_dir, run_name)
@@ -48,7 +50,31 @@ def main(config_path=None):
         pad_id = 1
         bos_id = 0
         eos_id = 2
-        model = ProteinEditFlowModel(vocab_size=vocab_size, pad_id=pad_id, config=cfg.model)
+        if cfg.training.reparameterize:
+            model = ReparameterizedProteinEditFlowModel(vocab_size=vocab_size, pad_id=pad_id, config=cfg.model)
+        else:
+            model = ProteinEditFlowModel(vocab_size=vocab_size, pad_id=pad_id, config=cfg.model)
+            # model = SMILESEditFlowModel(vocab_size=vocab_size, pad_id=pad_id, config=cfg.model)
+
+        if cfg.training.no_training:
+            print(f"No training mode: freezing all parameters")
+            for param in model.parameters():
+                param.requires_grad = False
+            
+            first_param = next(model.parameters())
+            first_param.requires_grad = True
+            print(f"Keeping parameter with shape {first_param.shape} with requires_grad=True for backward compatibility")
+
+            
+    # if cfg.task == 'protein':
+    #     tokenizer = EsmTokenizer.from_pretrained("facebook/esm2_t33_650M_UR50D")
+    #     vocab_size = 24
+    #     source_distribution = flow.get_source_distribution(source_distribution=cfg.flow.source_distribution, vocab_size=vocab_size, special_token_ids=[0,1,2,3])
+
+    #     pad_id = 1
+    #     bos_id = 0
+    #     eos_id = 2
+    #     model = ProteinEditFlowModel(vocab_size=vocab_size, pad_id=pad_id, config=cfg.model)
     elif cfg.task == 'smiles':
         vocab_size = 587
         tokenizer = SMILES_SPE_Tokenizer('/scratch/pranamlab/tong/cope/editflows/smiles_tokenizer/new_vocab.txt',
@@ -59,22 +85,39 @@ def main(config_path=None):
         pad_id = 0
         bos_id = 2
         eos_id = 3
-        model = SMILESEditFlowModel(vocab_size=vocab_size, pad_id=pad_id, config=cfg.model)
+
+        if cfg.training.reparameterize:
+            model = ReparameterizedSMILESEditFlowModel(vocab_size=vocab_size, pad_id=pad_id, config=cfg.model)
+        else:
+            model = SMILESEditFlowModel(vocab_size=vocab_size, pad_id=pad_id, config=cfg.model)
     elif cfg.task == 'selfies':
         vocab_size = 44
-        tokenizer = SelfiesTokenizer.load("/scratch/pranamlab/tong/data/selfies/28k_mimetics/tokenizer/vocab.json")
+        tokenizer = SelfiesTokenizer.load("/usr/xtmp/mth45/Documents/programmable_biology_group/cope/data/28k_mimetics/tokenizer/vocab.json")
         source_distribution = flow.get_source_distribution(
             source_distribution=cfg.flow.source_distribution, vocab_size=vocab_size, special_token_ids=[0,1,2]
         )
         pad_id = 0
         bos_id = 1
         eos_id = 2
-        model = SMILESEditFlowModel(vocab_size=vocab_size, pad_id=pad_id, config=cfg.model)
+        if cfg.training.reparameterize:
+            print(f"Using reparameterized SMILES edit flow model")
+            model = ReparameterizedSMILESEditFlowModel(vocab_size=vocab_size, pad_id=pad_id, config=cfg.model)
+        else:
+            model = SMILESEditFlowModel(vocab_size=vocab_size, pad_id=pad_id, config=cfg.model)
     else:
         raise NotImplementedError
 
     num_parameters = sum(p.numel() for p in model.parameters())
     print(f"NUM PARAMETERS: {num_parameters}")
+    
+    # Print accumulation batch size
+    grad_accumulation_steps = getattr(cfg.training, 'grad_accumulation_steps', 1)
+    batch_size = getattr(cfg.training, 'batch_size', 1)
+    num_gpus = getattr(cfg.compute, 'ngpus', 1)
+    effective_batch_size = batch_size * grad_accumulation_steps * num_gpus
+    print(f"GRADIENT ACCUMULATION STEPS: {grad_accumulation_steps}")
+    print(f"EFFECTIVE BATCH SIZE (batch_size * grad_accum_steps * num_gpus): {effective_batch_size} (batch_size={batch_size}, grad_accum_steps={grad_accumulation_steps}, num_gpus={num_gpus})")
+    print(f"LAM_PROP: {getattr(cfg.training, 'lam_prop', None)}")
 
     eps_id = getattr(cfg.flow, "eps_id", -1)
     path = flow.get_path(scheduler_type=cfg.flow.scheduler_type, exponent=cfg.flow.exponent, eps_id=eps_id)
@@ -90,13 +133,23 @@ def main(config_path=None):
         eos_id,
         cfg
     )
-    print(f"config.training.loc_prop_path: {cfg.training.loc_prop_path}")
+
+    
+    print("--------------------------------")
+    print(f"run_name: {run_name}")
+    print(f"config.training.loc_prop_path: {getattr(cfg.training, 'loc_prop_path', False)}")
+    print(f"config.model.d_model: {cfg.model.d_model}")
+    print("--------------------------------")
 
     # Dataloader
     if cfg.task == 'protein':
         # train_dataloader, val_dataloader = data.get_data_loaders(config=cfg, data_state=None)
         train_dataset = load_from_disk(cfg.data.train_path)
         val_dataset = load_from_disk(cfg.data.val_path)
+        train_dataset = train_dataset.shuffle(seed=cfg.training.seed)
+        print(f"train_dataset: {train_dataset[0]['input_ids']}")
+        print(f"train_dataset length: {len(train_dataset[0]['input_ids'])}")
+        print(f"train_dataset keys: {train_dataset[0].keys()}")
         train_dataloader = DataLoader(train_dataset, batch_size=None, shuffle=True, num_workers=4)
         val_dataloader = DataLoader(val_dataset, batch_size=None, shuffle=False, num_workers=4)
     elif cfg.task == 'smiles':
@@ -105,8 +158,10 @@ def main(config_path=None):
         train_dataloader = DataLoader(train_dataset, batch_size=None, shuffle=True, num_workers=4)
         val_dataloader = DataLoader(val_dataset, batch_size=None, shuffle=False, num_workers=4)
     elif cfg.task == 'selfies':
-        train_dataset = load_from_disk('/scratch/pranamlab/tong/data/selfies/28k_mimetics/train')
-        val_dataset = load_from_disk('/scratch/pranamlab/tong/data/selfies/28k_mimetics/validation')
+        train_dataset = load_from_disk(cfg.data.train_path)
+        val_dataset = load_from_disk(cfg.data.val_path)
+        print(f"train_dataset: {train_dataset[0]['input_ids']}")
+        print(f"train_dataset length: {len(train_dataset[0]['input_ids'])}")
         train_dataloader = DataLoader(train_dataset, batch_size=None, shuffle=True, num_workers=4)
         val_dataloader = DataLoader(val_dataset, batch_size=None, shuffle=False, num_workers=4)
     else:
@@ -127,6 +182,7 @@ def main(config_path=None):
         project='Gated proposal model',
         name=run_name,
         entity='maximilianholsman',
+        resume="allow",
     )
     
     trainer = pl.Trainer(
@@ -154,4 +210,5 @@ if __name__ == '__main__':
     parser.add_argument('--config', type=str, default=None,
                         help='Path to config YAML file (default: uses hardcoded default config)')
     args = parser.parse_args()
+    print(f"args.config: {args.config}")
     main(config_path=args.config)

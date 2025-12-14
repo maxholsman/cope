@@ -128,7 +128,7 @@ class UniformSourceDistribution:
         else:
             return _one(tensor_like)
     
-    def sample_x0_from_x1(self, x1, pad_id, allowed_tokens, scale_size = 2, bos_id = 0, eos_id = 2):
+    def sample_x0_from_x1(self, x1, pad_id, allowed_tokens, scale_size = 2, bos_id = 0, eos_id = 2, sample_type='regular', eps_id = -1):
         """
         For each sequence in x1, sample an x0 whose *core* length (excluding BOS/EOS)
         is in [0, scale_size * len_valid(x1)], where len_valid(x1) counts only tokens that are

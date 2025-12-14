@@ -206,9 +206,12 @@ class ProteinEditFlowModel(nn.Module):
         self.pad_id = pad_id
 
         # --- Embedding ---
-        self.esm_emb = EsmModel.from_pretrained("facebook/esm2_t33_650M_UR50D")
-        for param in self.esm_emb.parameters():
-            param.requires_grad = False 
+        esm_model_name = getattr(config, "esm_model_name", "facebook/esm2_t33_650M_UR50D")
+        freeze_esm = getattr(config, "freeze_esm", True)
+        self.esm_emb = EsmModel.from_pretrained(esm_model_name)
+        if freeze_esm:
+            for param in self.esm_emb.parameters():
+                param.requires_grad = False
         self.time_emb = TimeEmbedding(d_model=self.d_model)
 
         self.tok_embed_to_hidden = nn.Linear(1280, self.d_model)
@@ -249,7 +252,7 @@ class ProteinEditFlowModel(nn.Module):
     ):
         """
         x_t: (B, L) long tokens
-        mask: (B, L) bool, True = PAD (ignored)
+        mask: (B, L) bool
         t: (B,) or scalar in [0,1]
         esmbed: optional (B, L, esm2_embed_dim) if use_real_esm2=True
         """
@@ -259,6 +262,8 @@ class ProteinEditFlowModel(nn.Module):
         # --- Embedding ---
         h = self.esm_emb(x_t, mask).last_hidden_state
         h = self.tok_embed_to_hidden(h)
+
+        # print(f"mask: {mask.tolist()}")
 
         # --- Add time embedding (broadcast across length) ---
         t_emb = self.time_emb(t, batch_size=B)  # (B, d_model)
@@ -291,6 +296,225 @@ class ProteinEditFlowModel(nn.Module):
             logits_sub = logits_sub.masked_fill((~mask).unsqueeze(-1), neg_val)
 
         return lam_ins, logits_ins, lam_del, lam_sub, logits_sub
+
+class ReparameterizedProteinEditFlowModel(nn.Module):
+    """
+    Inputs:
+      x_t: (B, L) Long
+      mask: (B, L) bool, True=pad (i.e., should be ignored)
+      t: (B,) or scalar in [0,1]
+
+    Outputs:
+      lam_ins:  (B, L)         >= 0
+      logits_ins: (B, L, V)
+      lam_del:  (B, L)         >= 0
+      lam_sub:  (B, L)         >= 0
+      logits_sub: (B, L, V)
+    """
+    def __init__(self, vocab_size, pad_id, config):
+        super().__init__()
+        self.d_model = getattr(config, "d_model", 768)
+        self.n_layers = getattr(config, "n_layers", 12)
+        self.n_heads = getattr(config, "n_heads", 12)
+        self.mlp_ratio = getattr(config, "mlp_ratio", 4)
+        self.max_len = getattr(config, "max_len", 2048)
+        self.dropout = getattr(config, "dropout", 0.1)
+        self.attn_dropout = getattr(config, "attn_dropout", 0)
+        self.proj_dropout = getattr(config, "proj_dropout", 0)
+        self.vocab_size = vocab_size
+        self.pad_id = pad_id
+
+        # --- Embedding ---
+        esm_model_name = getattr(config, "esm_model_name", "facebook/esm2_t33_650M_UR50D")
+        freeze_esm = getattr(config, "freeze_esm", True)
+        self.esm_emb = EsmModel.from_pretrained(esm_model_name)
+        if freeze_esm:
+            for param in self.esm_emb.parameters():
+                param.requires_grad = False
+        self.time_emb = TimeEmbedding(d_model=self.d_model)
+
+        self.tok_embed_to_hidden = nn.Linear(self.esm_emb.config.hidden_size, self.d_model)
+
+        # --- RoPE shared by attention blocks ---
+        rope = RotaryPositionalEmbedding(head_dim=self.d_model // self.n_heads, max_len=self.max_len)
+
+        # --- Encoder ---
+        self.blocks = nn.ModuleList([
+            TransformerBlock(
+                d_model=self.d_model,
+                n_heads=self.n_heads,
+                mlp_ratio=self.mlp_ratio,
+                attn_dropout=self.attn_dropout,
+                proj_dropout=self.proj_dropout,
+                rope=rope
+            )
+            for _ in range(self.n_layers)
+        ])
+        self.final_norm = nn.LayerNorm(self.d_model)
+
+        # --- Heads ---
+        # We use small MLP heads for rates; logits are linear.
+        self.lam_total_head = nn.Sequential(nn.Linear(self.d_model, self.d_model//2), nn.SiLU(), nn.Linear(self.d_model//2, 1))
+        self.logits_type_head = nn.Sequential(nn.Linear(self.d_model, self.d_model//2), nn.SiLU(), nn.Linear(self.d_model//2, 3))
+        self.logits_ins_head = nn.Linear(self.d_model, vocab_size, bias=False)
+        self.logits_sub_head = nn.Linear(self.d_model, vocab_size, bias=False)
+
+        # nonnegativity via softplus (safer than exp)
+        self.softplus = nn.Softplus(beta=1.0)
+
+    def forward(
+        self,
+        x_t: torch.LongTensor,
+        mask: torch.BoolTensor,
+        t: torch.Tensor,
+    ):
+        """
+        x_t: (B, L) long tokens
+        mask: (B, L) bool
+        t: (B,) or scalar in [0,1]
+        esmbed: optional (B, L, esm2_embed_dim) if use_real_esm2=True
+        """
+        B, L = x_t.shape
+        # pdb.set_trace()
+
+        # --- Embedding ---
+        h = self.esm_emb(x_t, mask).last_hidden_state
+        h = self.tok_embed_to_hidden(h)
+
+        # print(f"mask: {mask.tolist()}")
+
+        # --- Add time embedding (broadcast across length) ---
+        t_emb = self.time_emb(t, batch_size=B)  # (B, d_model)
+        h = h + t_emb.unsqueeze(1)  # (B, L, d_model)
+
+        # --- Encoder blocks with key padding mask ---
+        for blk in self.blocks:
+            h = blk(h, key_padding_mask=(~mask))
+
+        h = self.final_norm(h)  # (B, L, d_model)
+
+        # --- Heads ---
+        lam_total = self.softplus(self.lam_total_head(h)).squeeze(-1)  # (B, L)
+        logits_type = self.logits_type_head(h)  # (B, L, 3)
+        logits_ins = self.logits_ins_head(h)  # (B, L, V)
+        logits_sub = self.logits_sub_head(h)  # (B, L, V)
+
+        # --- Zero-out padded positions so they contribute nothing downstream ---
+        if exists(mask):
+            # For lambdas: force to 0 on pads
+            pad_mask_f = mask.to(h.dtype)  # True=valid -> 1.0
+            lam_total = lam_total * pad_mask_f
+
+            # kill logits on pads
+            neg_val = torch.tensor(-1e4, device=h.device, dtype=h.dtype)
+            logits_type = logits_type.masked_fill((~mask).unsqueeze(-1), neg_val)
+            logits_ins = logits_ins.masked_fill((~mask).unsqueeze(-1), neg_val)
+            logits_sub = logits_sub.masked_fill((~mask).unsqueeze(-1), neg_val)
+
+        return lam_total, logits_type, logits_ins, logits_sub
+
+class ReparameterizedSMILESEditFlowModel(nn.Module):
+    """
+    Inputs:
+      x_t: (B, L) Long
+      mask: (B, L) bool, True=pad (i.e., should be ignored)
+      t: (B,) or scalar in [0,1]
+
+    Outputs:
+      lam_total: (B, L)         >= 0
+      logits_type: (B, L, 3)    over {ins, del, sub}
+      logits_ins: (B, L, V)
+      logits_sub: (B, L, V)
+    """
+    def __init__(self, vocab_size, pad_id, config):
+        super().__init__()
+        self.d_model = getattr(config, "d_model", 768)
+        self.n_layers = getattr(config, "n_layers", 12)
+        self.n_heads = getattr(config, "n_heads", 12)
+        self.mlp_ratio = getattr(config, "mlp_ratio", 4)
+        self.max_len = getattr(config, "max_len", 2048)
+        self.dropout = getattr(config, "dropout", 0.1)
+        self.attn_dropout = getattr(config, "attn_dropout", 0)
+        self.proj_dropout = getattr(config, "proj_dropout", 0)
+        self.vocab_size = vocab_size
+        self.pad_id = pad_id
+
+        # --- Embedding ---
+        self.seq_emb = nn.Embedding(self.vocab_size, self.d_model, padding_idx=self.pad_id)
+        self.time_emb = TimeEmbedding(d_model=self.d_model)
+
+        # --- RoPE shared by attention blocks ---
+        rope = RotaryPositionalEmbedding(head_dim=self.d_model // self.n_heads, max_len=self.max_len)
+
+        # --- Encoder ---
+        self.blocks = nn.ModuleList([
+            TransformerBlock(
+                d_model=self.d_model,
+                n_heads=self.n_heads,
+                mlp_ratio=self.mlp_ratio,
+                attn_dropout=self.attn_dropout,
+                proj_dropout=self.proj_dropout,
+                rope=rope
+            )
+            for _ in range(self.n_layers)
+        ])
+        self.final_norm = nn.LayerNorm(self.d_model)
+
+        # --- Heads ---
+        # We use small MLP heads for rates; logits are linear.
+        self.lam_total_head = nn.Sequential(nn.Linear(self.d_model, self.d_model//2), nn.SiLU(), nn.Linear(self.d_model//2, 1))
+        self.logits_type_head = nn.Sequential(nn.Linear(self.d_model, self.d_model//2), nn.SiLU(), nn.Linear(self.d_model//2, 3))
+        self.logits_ins_head = nn.Linear(self.d_model, vocab_size, bias=False)
+        self.logits_sub_head = nn.Linear(self.d_model, vocab_size, bias=False)
+
+        # nonnegativity via softplus (safer than exp)
+        self.softplus = nn.Softplus(beta=1.0)
+
+    def forward(
+        self,
+        x_t: torch.LongTensor,
+        mask: torch.BoolTensor,
+        t: torch.Tensor,
+    ):
+        """
+        x_t: (B, L) long tokens
+        mask: (B, L) bool
+        t: (B,) or scalar in [0,1]
+        """
+        B, L = x_t.shape
+
+        # --- Embedding ---
+        h = self.seq_emb(x_t)
+
+        # --- Add time embedding (broadcast across length) ---
+        t_emb = self.time_emb(t, batch_size=B)  # (B, d_model)
+        h = h + t_emb.unsqueeze(1)  # (B, L, d_model)
+
+        # --- Encoder blocks with key padding mask ---
+        for blk in self.blocks:
+            h = blk(h, key_padding_mask=(~mask))
+
+        h = self.final_norm(h)  # (B, L, d_model)
+
+        # --- Heads ---
+        lam_total = self.softplus(self.lam_total_head(h)).squeeze(-1)  # (B, L)
+        logits_type = self.logits_type_head(h)  # (B, L, 3)
+        logits_ins = self.logits_ins_head(h)  # (B, L, V)
+        logits_sub = self.logits_sub_head(h)  # (B, L, V)
+
+        # --- Zero-out padded positions so they contribute nothing downstream ---
+        if exists(mask):
+            # For lambdas: force to 0 on pads
+            pad_mask_f = mask.to(h.dtype)  # True=valid -> 1.0
+            lam_total = lam_total * pad_mask_f
+
+            # kill logits on pads
+            neg_val = torch.tensor(-1e4, device=h.device, dtype=h.dtype)
+            logits_type = logits_type.masked_fill((~mask).unsqueeze(-1), neg_val)
+            logits_ins = logits_ins.masked_fill((~mask).unsqueeze(-1), neg_val)
+            logits_sub = logits_sub.masked_fill((~mask).unsqueeze(-1), neg_val)
+
+        return lam_total, logits_type, logits_ins, logits_sub
 
 class SMILESEditFlowModel(nn.Module):
     """
@@ -359,7 +583,7 @@ class SMILESEditFlowModel(nn.Module):
     ):
         """
         x_t: (B, L) long tokens
-        mask: (B, L) bool, True = PAD (ignored)
+        mask: (B, L) bool
         t: (B,) or scalar in [0,1]
         esmbed: optional (B, L, esm2_embed_dim) if use_real_esm2=True
         """
@@ -425,7 +649,13 @@ class EditFlow(pl.LightningModule):
         self.eos_id = eos_id
         self.pad_id = pad_id
         self.eps_id = getattr(self.path, "eps_id", -1)
-        self.lam_prop = getattr(self.cfg.training, "lambda_prop", 1.0)
+        self.lam_prop = getattr(self.cfg.training, "lam_prop", 0.0)
+        self.use_aux_ce = getattr(self.cfg.training, "use_aux_ce", False)
+        self.aux_ce_weight = getattr(self.cfg.training, "aux_ce_weight", 0.0)
+        self.reparameterize = getattr(self.cfg.training, "reparameterize", False)
+        self.gamma_rate = getattr(self.cfg.training, "gamma_rate", 1)
+        self.gamma_edit = getattr(self.cfg.training, "gamma_edit", 1)
+        # print(f"use_aux_ce: {self.use_aux_ce}, aux_ce_weight: {self.aux_ce_weight}")
 
         self._total_steps = None
 
@@ -481,8 +711,8 @@ class EditFlow(pl.LightningModule):
             t = torch.rand(B, device=self.device).clamp(max=0.9999)
 
             # Use lambda_indep if available (for convex schedulers), otherwise fallback to d_alpha_t / sigma_t
-            if hasattr(self.path.scheduler, 'lambda_indep'):
-                weight = self.path.scheduler.lambda_indep(t)  # (B,)
+            if hasattr(self.path, 'lambda_indep'):
+                weight = self.path.lambda_indep(t)  # (B,)
             else:
                 sched = self.path.scheduler(t)
                 weight = sched.d_alpha_t / sched.sigma_t     # (B,)
@@ -500,25 +730,60 @@ class EditFlow(pl.LightningModule):
             
             x_t, mask = remove_eps(z_t, self.eps_id, self.pad_id)
 
-        lam_ins, logits_ins, lam_del, lam_sub, logits_sub = self.model(x_t=x_t, mask=mask,t=t)
+        if self.reparameterize:
+            lam_total, logits_type, logits_ins, logits_sub = self.model(x_t=x_t, mask=mask,t=t)
+            
+            return lam_total, logits_type, logits_ins, logits_sub, z_t, z_1, x_t, mask, weight, M_t
 
-        return lam_ins, logits_ins, lam_del, lam_sub, logits_sub, z_t, z_1, x_t, mask, weight, M_t
+        else:
+            lam_ins, logits_ins, lam_del, lam_sub, logits_sub = self.model(x_t=x_t, mask=mask,t=t)
+
+            return lam_ins, logits_ins, lam_del, lam_sub, logits_sub, z_t, z_1, x_t, mask, weight, M_t
     
 
     def training_step(self, batch, batch_idx):
         x_1 = torch.tensor(batch["input_ids"]).to(self.device)
         B = x_1.shape[0]
         
-        lam_ins, logits_ins, lam_del, lam_sub, logits_sub, z_t, z_1, x_t, mask, weight, M_t = self.preparation(x_1)
+        if self.reparameterize:
+            lam_total, logits_type, logits_ins, logits_sub, z_t, z_1, x_t, mask, weight, M_t = self.preparation(x_1)
 
-        if self.loc_prop_path:
-            loss = self.loss_fn.forward_localized(lam_ins, logits_ins, lam_del, lam_sub, logits_sub, 
-                                z_t, z_1, x_t, mask, weight, M_t, self.lam_prop, self.eps_id, self.bos_id, self.eos_id)
+            if self.loc_prop_path:
+                loss, loss_components = self.loss_fn.reparameterized_forward_localized(lam_total, logits_type, logits_ins, logits_sub, 
+                                z_t, z_1, x_t, mask, weight, M_t, self.lam_prop, self.eps_id, self.bos_id, self.eos_id, self.gamma_rate, self.gamma_edit, self.use_aux_ce, self.aux_ce_weight)        
+            else:
+                loss, loss_components = self.loss_fn.reparameterized_forward(lam_total, logits_type, logits_ins, logits_sub,
+                                z_t, z_1, x_t, mask, weight, self.eps_id, self.bos_id, self.eos_id, self.gamma_rate, self.gamma_edit, self.use_aux_ce, self.aux_ce_weight)
+            
         else:
-            loss = self.loss_fn.forward(lam_ins, logits_ins, lam_del, lam_sub, logits_sub, 
-                                z_t, z_1, x_t, mask, weight, self.eps_id, self.bos_id, self.eos_id)
+            lam_ins, logits_ins, lam_del, lam_sub, logits_sub, z_t, z_1, x_t, mask, weight, M_t = self.preparation(x_1)
+
+            if self.loc_prop_path:
+                loss, loss_components = self.loss_fn.forward_localized(lam_ins, logits_ins, lam_del, lam_sub, logits_sub, 
+                                    z_t, z_1, x_t, mask, weight, M_t, self.lam_prop, self.eps_id, self.bos_id, self.eos_id, self.use_aux_ce, self.aux_ce_weight)
+            else:
+                loss, loss_components = self.loss_fn.forward(lam_ins, logits_ins, lam_del, lam_sub, logits_sub, 
+                                    z_t, z_1, x_t, mask, weight, self.eps_id, self.bos_id, self.eos_id, self.use_aux_ce, self.aux_ce_weight)
         
+        # Log total loss
         self.log("train_loss", loss, prog_bar=True, on_step=True, on_epoch=True, batch_size=B, sync_dist=True)
+        # Log full non-aux loss
+        # Log individual non-aux loss components
+        self.log("train_loss_rate", loss_components["loss_rate"], prog_bar=False, on_step=True, on_epoch=True, batch_size=B, sync_dist=True)
+        self.log("train_loss_edit", loss_components["loss_edit"], prog_bar=False, on_step=True, on_epoch=True, batch_size=B, sync_dist=True)
+        # Log unweighted and weighted aux losses (only if use_aux_ce is True)
+        if self.use_aux_ce and self.aux_ce_weight > 0.0:
+            self.log("train_loss_base", loss_components["loss_base"], prog_bar=False, on_step=True, on_epoch=True, batch_size=B, sync_dist=True)
+            self.log("train_loss_aux_unweighted", loss_components["loss_aux_unweighted"], prog_bar=False, on_step=True, on_epoch=True, batch_size=B, sync_dist=True)
+            self.log("train_loss_aux_weighted", loss_components["loss_aux_weighted"], prog_bar=False, on_step=True, on_epoch=True, batch_size=B, sync_dist=True)
+        # Log new weighted/unweighted components (only available for reparameterized methods)
+        if "loss_rate_unweighted" in loss_components:
+            self.log("train_loss_rate_unweighted", loss_components["loss_rate_unweighted"], prog_bar=False, on_step=True, on_epoch=True, batch_size=B, sync_dist=True)
+            self.log("train_loss_rate_weighted", loss_components["loss_rate_weighted"], prog_bar=False, on_step=True, on_epoch=True, batch_size=B, sync_dist=True)
+            self.log("train_loss_edit_unweighted", loss_components["loss_edit_unweighted"], prog_bar=False, on_step=True, on_epoch=True, batch_size=B, sync_dist=True)
+            self.log("train_loss_edit_weighted", loss_components["loss_edit_weighted"], prog_bar=False, on_step=True, on_epoch=True, batch_size=B, sync_dist=True)
+            self.log("train_loss_total_weighted", loss_components["loss_total_weighted"], prog_bar=False, on_step=True, on_epoch=True, batch_size=B, sync_dist=True)
+            self.log("train_loss_total_unweighted", loss_components["loss_total_unweighted"], prog_bar=False, on_step=True, on_epoch=True, batch_size=B, sync_dist=True)
 
         return loss
     
@@ -526,15 +791,44 @@ class EditFlow(pl.LightningModule):
         x_1 = torch.tensor(batch["input_ids"]).to(self.device)
         B = x_1.shape[0]
         
-        lam_ins, logits_ins, lam_del, lam_sub, logits_sub, z_t, z_1, x_t, mask, weight, M_t = self.preparation(x_1)
-        
-        if self.loc_prop_path:
-            loss = self.loss_fn.forward_localized(lam_ins, logits_ins, lam_del, lam_sub, logits_sub, 
-                                z_t, z_1, x_t, mask, weight, M_t, self.lam_prop, self.eps_id, self.bos_id, self.eos_id)
+        if self.reparameterize:
+            lam_total, logits_type, logits_ins, logits_sub, z_t, z_1, x_t, mask, weight, M_t = self.preparation(x_1)
+            
+            if self.loc_prop_path:
+                loss, loss_components = self.loss_fn.reparameterized_forward_localized(lam_total, logits_type, logits_ins, logits_sub, 
+                                z_t, z_1, x_t, mask, weight, M_t, self.lam_prop, self.eps_id, self.bos_id, self.eos_id, self.gamma_rate, self.gamma_edit, self.use_aux_ce, self.aux_ce_weight)        
+            else:
+                loss, loss_components = self.loss_fn.reparameterized_forward(lam_total, logits_type, logits_ins, logits_sub,
+                                z_t, z_1, x_t, mask, weight, self.eps_id, self.bos_id, self.eos_id, self.gamma_rate, self.gamma_edit, self.use_aux_ce, self.aux_ce_weight)
         else:
-            loss = self.loss_fn.forward(lam_ins, logits_ins, lam_del, lam_sub, logits_sub, 
-                                z_t, z_1, x_t, mask, weight, self.eps_id, self.bos_id, self.eos_id)
+            lam_ins, logits_ins, lam_del, lam_sub, logits_sub, z_t, z_1, x_t, mask, weight, M_t = self.preparation(x_1)
+            
+            if self.loc_prop_path:
+                loss, loss_components = self.loss_fn.forward_localized(lam_ins, logits_ins, lam_del, lam_sub, logits_sub, 
+                                    z_t, z_1, x_t, mask, weight, M_t, self.lam_prop, self.eps_id, self.bos_id, self.eos_id, self.use_aux_ce, self.aux_ce_weight)
+            else:
+                loss, loss_components = self.loss_fn.forward(lam_ins, logits_ins, lam_del, lam_sub, logits_sub, 
+                                    z_t, z_1, x_t, mask, weight, self.eps_id, self.bos_id, self.eos_id, self.use_aux_ce, self.aux_ce_weight)
+        
+        # Log total loss
         self.log("val_loss", loss, prog_bar=True, on_step=True, on_epoch=True, batch_size=B, sync_dist=True)
+        # Log full non-aux loss
+        # Log individual non-aux loss components
+        self.log("val_loss_rate", loss_components["loss_rate"], prog_bar=False, on_step=True, on_epoch=True, batch_size=B, sync_dist=True)
+        self.log("val_loss_edit", loss_components["loss_edit"], prog_bar=False, on_step=True, on_epoch=True, batch_size=B, sync_dist=True)
+        # Log unweighted and weighted aux losses (only if use_aux_ce is True)
+        if self.use_aux_ce and self.aux_ce_weight > 0.0:
+            self.log("val_loss_base", loss_components["loss_base"], prog_bar=False, on_step=True, on_epoch=True, batch_size=B, sync_dist=True)
+            self.log("val_loss_aux_unweighted", loss_components["loss_aux_unweighted"], prog_bar=False, on_step=True, on_epoch=True, batch_size=B, sync_dist=True)
+            self.log("val_loss_aux_weighted", loss_components["loss_aux_weighted"], prog_bar=False, on_step=True, on_epoch=True, batch_size=B, sync_dist=True)
+        # Log new weighted/unweighted components (only available for reparameterized methods)
+        if "loss_rate_unweighted" in loss_components:
+            self.log("val_loss_rate_unweighted", loss_components["loss_rate_unweighted"], prog_bar=False, on_step=True, on_epoch=True, batch_size=B, sync_dist=True)
+            self.log("val_loss_rate_weighted", loss_components["loss_rate_weighted"], prog_bar=False, on_step=True, on_epoch=True, batch_size=B, sync_dist=True)
+            self.log("val_loss_edit_unweighted", loss_components["loss_edit_unweighted"], prog_bar=False, on_step=True, on_epoch=True, batch_size=B, sync_dist=True)
+            self.log("val_loss_edit_weighted", loss_components["loss_edit_weighted"], prog_bar=False, on_step=True, on_epoch=True, batch_size=B, sync_dist=True)
+            self.log("val_loss_total_weighted", loss_components["loss_total_weighted"], prog_bar=False, on_step=True, on_epoch=True, batch_size=B, sync_dist=True)
+            self.log("val_loss_total_unweighted", loss_components["loss_total_unweighted"], prog_bar=False, on_step=True, on_epoch=True, batch_size=B, sync_dist=True)
 
         return loss
     

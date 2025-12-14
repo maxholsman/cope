@@ -1,0 +1,87 @@
+defaults:
+  - _self_
+
+task: protein
+
+compute:
+  ngpus: 1 
+  nodes: 4
+
+logging:
+  log_freq: 10 
+  log_lr_every: ${logging.log_freq}
+  log_file_name: stdout.log
+  run_name: uniref_bs16_leq250_n32k_lr1e-5_ge_1_gr_1
+  enable_wandb: True  
+  entity: maximilianholsman
+  project: Gated proposal model
+  group: null
+
+data:
+  train_path: /usr/xtmp/mth45/Documents/programmable_biology_group/cope/data/uniprot/uniprot_sprot_dataset_esm2_tokenized_bs16_leq250_n32k/train
+  val_path: /usr/xtmp/mth45/Documents/programmable_biology_group/cope/data/uniprot/uniprot_sprot_dataset_esm2_tokenized_bs16_leq250_n32k/validation
+  # train_path: /usr/xtmp/mth45/Documents/programmable_biology_group/cope/data/28k_mimetics/train
+  # val_path: /usr/xtmp/mth45/Documents/programmable_biology_group/cope/data/28k_mimetics/validation
+  cache_dir: null 
+  num_workers: 1
+
+training:
+  batch_size: None 
+  snapshot: 100  
+  eval_freq: 1000 
+  perplexity_freq: 100  
+  seed: 42
+  grad_accumulation_steps: 4
+  loc_prop_path: False
+  lam_prop: 1
+  reparameterize: True
+  gamma_rate: 1
+  gamma_edit: 1
+  use_aux_ce: False
+  aux_ce_weight: 1.0
+  no_training: False
+  # ckpt_path: /usr/xtmp/mth45/Documents/programmable_biology_group/cope/EditFlows/flow_matching/editflows/outputs/lr1e-5_epoch500_scale1.5_optimal0_uniref_bs16_leq250_n50k_lr1e-5_ge_1_gr_1/checkpoint/last.ckpt
+
+eval:
+  batch_size: None
+  sample_batch_size: 4
+  perplexity: False  
+  perplexity_batch_size: 4
+
+optim:
+  weight_decay: 0.03
+  optimizer: AdamW
+  lr: 1e-5
+  beta1: 0.9
+  beta2: 0.95
+  eps: 1e-8
+  grad_clip: 1.
+  eta_min_ratio: 0.1
+  fused: false
+  n_epochs: 500
+  warmup_ratio: 0.1
+
+flow:
+  source_distribution: uniform  
+  loss_function: editflows  
+  exponent: 2.
+  scheduler_type: polynomial
+  sampling_steps: 256  
+  eps_id: -1  
+
+model:
+  d_model: 1020  
+  # cond_dim: 256  # Remove this if not needed, or keep for future use
+  max_len: 2048  # Change from 'length' to 'max_len'
+  n_layers: 33   # Change from 'n_blocks' to 'n_layers'
+  n_heads: 20
+  dropout: 0.1   # This is read but not used - consider removing or using attn_dropout/proj_dropout instead
+  attn_dropout: 0.1  # Add this if you want attention dropout
+  proj_dropout: 0.1  # Add this if you want projection dropout
+  compile: False  # Keep for future use or remove
+  esm_model_name: facebook/esm2_t33_650M_UR50D
+  freeze_esm: true
+  p_optimal: 0
+  scale_size: 1.5
+
+work_dir: /usr/xtmp/mth45/Documents/programmable_biology_group/cope/EditFlows/flow_matching/editflows/outputs
